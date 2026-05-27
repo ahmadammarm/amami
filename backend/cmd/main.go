@@ -40,20 +40,41 @@ func main() {
 	r := gin.Default()
 
 	// Fix Gin warning by setting trusted proxies
-	// In production, set this to your proxy IPs (e.g., Nginx)
 	_ = r.SetTrustedProxies(nil)
 
-	// Public routes
-	api := r.Group("/api/v1")
+	// API V1 Group
+	v1 := r.Group("/api/v1")
 	{
-		auth := api.Group("/auth")
+		// Auth Module (Public)
+		auth := v1.Group("/auth")
 		{
-			// Apply rate limit to login
 			auth.POST("/login", middleware.RateLimit(5, time.Minute), config.AuthHandler.Login)
+		}
+
+		// User Management Module (Protected)
+		users := v1.Group("/users", middleware.RequireAuth())
+		{
+			users.POST("/invite", middleware.RequirePermission(config.RoleRepo, "user:manage"), config.UserHandler.Handler.InviteUser)
+			users.GET("", middleware.RequirePermission(config.RoleRepo, "user:manage"), config.UserHandler.Handler.GetAllUsers)
+			users.PATCH("/:id/status", middleware.RequirePermission(config.RoleRepo, "user:manage"), config.UserHandler.Handler.UpdateUserStatus)
+		}
+
+		// System Settings Module
+		settings := v1.Group("/settings")
+		{
+			settings.GET("/profile", config.SettingsHandler.Handler.GetMosqueProfile)
+			
+			// Protected settings
+			protected := settings.Group("", middleware.RequireAuth())
+			{
+				protected.PUT("/profile", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.UpdateMosqueProfile)
+				protected.PUT("/smtp", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.UpdateSMTPConfig)
+			}
 		}
 	}
 
 	appAddr := fmt.Sprintf(":%s", config.AppConfig.AppPort)
+	logger.Info("Starting server on " + appAddr)
 	if err := r.Run(appAddr); err != nil {
 		log.Fatalf("failed to run server: %v", err)
 	}

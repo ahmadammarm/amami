@@ -3,6 +3,7 @@ package auth
 import (
 	"net/http"
 
+	"github.com/ahmadammarm/amami/backend/internal/dto/auth"
 	svc "github.com/ahmadammarm/amami/backend/internal/service/auth"
 	"github.com/ahmadammarm/amami/backend/pkg/logger"
 	"github.com/ahmadammarm/amami/backend/pkg/utils"
@@ -23,7 +24,7 @@ func NewAuthHandler(authService svc.AuthService) AuthHandler {
 }
 
 func (h *authHandler) Login(c *gin.Context) {
-	var req svc.LoginRequest
+	var req auth.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error("Login validation failed", zap.Error(err))
 		utils.ValidationErrorResponse(c, err)

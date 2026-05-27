@@ -3,21 +3,13 @@ package auth
 import (
 	"errors"
 
+	"github.com/ahmadammarm/amami/backend/internal/dto/auth"
 	repo "github.com/ahmadammarm/amami/backend/internal/repository/auth"
 	"github.com/ahmadammarm/amami/backend/pkg/utils"
 )
 
-type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
-}
-
-type LoginResponse struct {
-	Token string `json:"token"`
-}
-
 type AuthService interface {
-	Login(req LoginRequest) (*LoginResponse, error)
+	Login(req auth.LoginRequest) (*auth.LoginResponse, error)
 }
 
 type authService struct {
@@ -28,7 +20,7 @@ func NewAuthService(userRepo repo.UserRepository) AuthService {
 	return &authService{userRepo: userRepo}
 }
 
-func (s *authService) Login(req LoginRequest) (*LoginResponse, error) {
+func (s *authService) Login(req auth.LoginRequest) (*auth.LoginResponse, error) {
 	// Updated to specifically find by email
 	user, err := s.userRepo.FindByUsernameOrEmail(req.Email)
 	if err != nil {
@@ -48,5 +40,5 @@ func (s *authService) Login(req LoginRequest) (*LoginResponse, error) {
 		return nil, errors.New("failed to generate token")
 	}
 
-	return &LoginResponse{Token: token}, nil
+	return &auth.LoginResponse{Token: token}, nil
 }
