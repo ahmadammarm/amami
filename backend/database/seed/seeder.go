@@ -19,6 +19,9 @@ func Seed(db *gorm.DB) error {
 		{Code: "zakat:manage", Description: "Manage zakat collection and distribution"},
 		{Code: "qurban:manage", Description: "Manage qurban packages and bookings"},
 		{Code: "inventory:manage", Description: "Manage mosque assets"},
+		{Code: "jamaah:manage", Description: "Manage community database and scoring"},
+		{Code: "agenda:manage", Description: "Manage mosque events and documentation"},
+		{Code: "settings:manage", Description: "Manage mosque profile and system settings"},
 	}
 
 	for _, p := range permissions {
@@ -29,9 +32,11 @@ func Seed(db *gorm.DB) error {
 
 	// 2. Seed Roles
 	roles := []domain.Role{
-		{Name: "SUPER_ADMIN", Description: "Full system access"},
-		{Name: "BENDAHARA", Description: "Financial management access"},
-		{Name: "TAKMIR", Description: "General operational access"},
+		{Name: "SUPER_ADMIN", Description: "Full system governance and management access"},
+		{Name: "BENDAHARA", Description: "Financial and Zakat management access"},
+		{Name: "TAKMIR", Description: "Broad operational management access (All except User/System management)"},
+		{Name: "SEKRETARIS", Description: "Administrative and documentation access"},
+		{Name: "JAMAAH", Description: "Community member access (Personal data only)"},
 	}
 
 	for i := range roles {
@@ -41,12 +46,37 @@ func Seed(db *gorm.DB) error {
 	}
 
 	// 3. Map Permissions to Roles (RBAC)
+	
+	// Helper to find permission ID by code
+	getPermID := func(code string) uint {
+		var p domain.Permission
+		db.Where("code = ?", code).First(&p)
+		return p.ID
+	}
+
+	// SUPER_ADMIN: Gets everything
 	var allPerms []domain.Permission
 	db.Find(&allPerms)
-
 	for _, p := range allPerms {
-		rp := domain.RolePermission{RoleID: roles[0].ID, PermissionID: p.ID}
-		db.FirstOrCreate(&rp, domain.RolePermission{RoleID: roles[0].ID, PermissionID: p.ID})
+		db.FirstOrCreate(&domain.RolePermission{RoleID: roles[0].ID, PermissionID: p.ID})
+	}
+
+	// BENDAHARA: Finance, Zakat, and reading Jamaah
+	bendaharaPerms := []string{"ledger:read", "ledger:write", "zakat:manage", "jamaah:manage"}
+	for _, code := range bendaharaPerms {
+		db.FirstOrCreate(&domain.RolePermission{RoleID: roles[1].ID, PermissionID: getPermID(code)})
+	}
+
+	// TAKMIR: Broad access (Everything except user:manage and settings:manage)
+	takmirPerms := []string{"ledger:read", "zakat:manage", "qurban:manage", "inventory:manage", "jamaah:manage", "agenda:manage"}
+	for _, code := range takmirPerms {
+		db.FirstOrCreate(&domain.RolePermission{RoleID: roles[2].ID, PermissionID: getPermID(code)})
+	}
+
+	// SEKRETARIS: Administration, Agenda, and reading reports
+	sekretarisPerms := []string{"ledger:read", "jamaah:manage", "agenda:manage", "settings:manage"}
+	for _, code := range sekretarisPerms {
+		db.FirstOrCreate(&domain.RolePermission{RoleID: roles[3].ID, PermissionID: getPermID(code)})
 	}
 
 	// 4. Seed Super Admin User

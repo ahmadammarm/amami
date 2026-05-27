@@ -11,7 +11,12 @@ The **amami** platform is an Enterprise Resource Planning (ERP) system designed 
 **Objective**: To enforce the Principle of Least Privilege (PoLP), ensuring users only access data relevant to their specific duties.
 - **Detailed Workflow**:
     1.  **Define Permissions**: System initializes with atomic codes like `ledger:read`, `zakat:calculate`, `inventory:loan`.
-    2.  **Role Template**: Super Admin creates grouping roles (e.g., "Bendahara").
+    2.  **Role Template**: Super Admin creates grouping roles:
+        - **Super Admin**: Full system governance.
+        - **Bendahara**: Financial and Zakat management.
+        - **Takmir**: Physical operations and logistics.
+        - **Sekretaris**: Administration and documentation.
+        - **Jamaah**: Personal data and public information access.
     3.  **Mapping**: Permissions are assigned to roles in the `role_permissions` join table.
 - **Key Data**: Role Name, Permission Code, Description.
 - **Senior Constraints**:
