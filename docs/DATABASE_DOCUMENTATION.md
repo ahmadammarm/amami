@@ -4,6 +4,14 @@
 1. [Executive Summary](#1-executive-summary)
 2. [Entity Relationship Diagram (ERD) Logic](#2-entity-relationship-diagram-erd-logic)
 3. [Module Specifications & Table Definitions](#3-module-specifications--table-definitions)
+    * [3.1 Core Auth & RBAC](#31-core-auth--rbac)
+    * [3.2 Jamaah & Profiles](#32-jamaah--profiles)
+    * [3.3 Finance & The Immutable Ledger](#33-finance--the-immutable-ledger)
+    * [3.4 Zakat & Social Welfare](#34-zakat--social-welfare)
+    * [3.5 Kurban & Operational Lifecycle](#35-kurban--operational-lifecycle)
+    * [3.6 Inventory Management](#36-inventory-management)
+    * [3.7 System & Utility Module](#37-system--utility-module)
+    * [3.8 Logistics & Event Module](#38-logistics--event-module)
 4. [Relationship & Referential Integrity](#4-relationship--referential-integrity)
 5. [Security & Auditing Protocols](#5-security--auditing-protocols)
 6. [Query Optimization & Performance](#6-query-optimization--performance)
@@ -124,21 +132,6 @@ If a mistake is made during data entry, the system does not allow for a "Delete"
 | current_balance | BIGINT | DEFAULT 0 |
 **Indexes:** `PK (id)`, `UNIQUE (code)`
 
-#### `payment_submissions`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | UUID | PK, DEFAULT gen_random_uuid() |
-| jamaah_id | UUID | FK -> `jamaah(id)`, NOT NULL |
-| fund_id | INT | FK -> `funds(id)`, NOT NULL |
-| amount | BIGINT | NOT NULL |
-| receipt_url | TEXT | NOT NULL |
-| status | VARCHAR(20) | PENDING, APPROVED, REJECTED |
-| bank_reference_id | VARCHAR(100) | UNIQUE, NULLABLE |
-| verified_by | UUID | FK -> `users(id)`, NULLABLE |
-| verified_at | TIMESTAMP | |
-**Foreign Keys:** `jamaah_id` ref `jamaah(id)`, `fund_id` ref `funds(id)`, `verified_by` ref `users(id)`
-**Indexes:** `PK (id)`, `INDEX (jamaah_id)`, `INDEX (status)`, `UNIQUE (bank_reference_id)`
-
 #### `transactions`
 | Column | Type | Constraints |
 | :--- | :--- | :--- |
@@ -250,6 +243,63 @@ The inventory and loan systems are optimized with indexes on `return_date` and `
 
 ---
 
+### 3.7 System & Utility Module
+This module handles global settings and internal communication for the Takmir.
+
+#### `system_settings`
+| Column | Type | Constraints |
+| :--- | :--- | :--- |
+| id | INT | PK, AUTO_INCREMENT |
+| key | VARCHAR(50) | UNIQUE, NOT NULL (e.g., 'mosque_name', 'smtp_host') |
+| value | TEXT | NOT NULL |
+| is_secret | BOOLEAN | DEFAULT FALSE (If true, value is encrypted) |
+**Indexes:** `PK (id)`, `UNIQUE (key)`
+
+#### `memos`
+| Column | Type | Constraints |
+| :--- | :--- | :--- |
+| id | UUID | PK, DEFAULT gen_random_uuid() |
+| title | VARCHAR(200) | NOT NULL |
+| content | TEXT | NOT NULL |
+| author_id | UUID | FK -> `users(id)`, NOT NULL |
+| is_pinned | BOOLEAN | DEFAULT FALSE |
+| created_at | TIMESTAMP | DEFAULT NOW() |
+**Foreign Keys:** `author_id` ref `users(id)`
+**Indexes:** `PK (id)`, `INDEX (created_at)`
+
+---
+
+### 3.8 Logistics & Event Module
+This module handles the scheduling and documentation of mosque activities.
+
+#### `agendas`
+| Column | Type | Constraints |
+| :--- | :--- | :--- |
+| id | UUID | PK, DEFAULT gen_random_uuid() |
+| title | VARCHAR(200) | NOT NULL |
+| description | TEXT | |
+| start_time | TIMESTAMP | NOT NULL |
+| end_time | TIMESTAMP | NOT NULL |
+| location | VARCHAR(100) | |
+| status | VARCHAR(20) | SCHEDULED, ONGOING, COMPLETED, CANCELLED |
+| created_by | UUID | FK -> `users(id)` |
+**Foreign Keys:** `created_by` ref `users(id)`
+**Indexes:** `PK (id)`, `INDEX (start_time)`, `INDEX (status)`
+
+#### `agenda_documentation`
+| Column | Type | Constraints |
+| :--- | :--- | :--- |
+| id | UUID | PK, DEFAULT gen_random_uuid() |
+| agenda_id | UUID | FK -> `agendas(id)`, NOT NULL |
+| file_url | TEXT | NOT NULL |
+| file_type | VARCHAR(50) | IMAGE, PDF |
+| uploaded_by| UUID | FK -> `users(id)` |
+| uploaded_at| TIMESTAMP | DEFAULT NOW() |
+**Foreign Keys:** `agenda_id` ref `agendas(id)`, `uploaded_by` ref `users(id)`
+**Indexes:** `PK (id)`, `INDEX (agenda_id)`
+
+---
+
 ## 4. Relationship & Referential Integrity
 Referential integrity is enforced via Foreign Key constraints. Most financial and religious records are set to `RESTRICT` on delete, meaning they can never be removed if they are part of a larger chain of events. Conversely, social links like `jamaah.user_id` use a `SET NULL` policy to preserve historical data if an account is deleted.
 
@@ -301,32 +351,3 @@ Managing Qurban involves tracking both a commitment (Booking) and a financial ev
 4.  INSERT `qurban_bookings` record.
 5.  (If payment made) INSERT `transactions` record and UPDATE `funds` balance.
 6.  **COMMIT TRANSACTION**
-
----
-
-## 8. Hybrid-Manual Payment Flow & Real-Time SSE
-To ensure the **amami** platform can be deployed immediately without the legal and technical delays of a Payment Gateway, we utilize a **Hybrid-Manual Flow**. This approach combines the simplicity of the mosque's existing Static QRIS with the modern user experience of Real-Time updates via Server-Sent Events (SSE).
-
-### 8.1 The End-to-End Lifecycle
-The lifecycle of a payment is designed to be user-friendly for the congregant while remaining strictly auditable for the Takmir. 
-
-1.  **Submission Phase**: The user selects an amount and fund category on the Vue.js frontend. The app displays the mosque's Static QRIS. After paying via their banking app, the user uploads a screenshot of the receipt. This creates a record in the `payment_submissions` table with a `PENDING` status.
-2.  **Notification Phase**: The Go backend pushes a "New Submission" event through an **SSE Stream** to all connected Admin Dashboards. This removes the need for admins to refresh the page, ensuring rapid response times.
-3.  **Verification Phase**: The Admin performs a "Blind Verification" by checking their actual bank mutation and entering the amount and a unique **Bank Reference ID** into the system.
-4.  **Finalization Phase**: Upon approval, an **ACID Transaction** is triggered: the submission status updates to `APPROVED`, a record is inserted into the `transactions` ledger, and the `funds` balance is updated.
-5.  **Feedback Phase**: The Go backend pushes a "Payment Success" event via SSE specifically to the donor's session, instantly updating their UI from a "Pending" state to a "Jazakallah" success screen.
-
-### 8.2 Security & Anti-Forgery Layers
-Since manual uploads are susceptible to human error or malicious forgery, the system implements four layers of defensive programming:
-
-*   **Anti-Double Spending**: The `bank_reference_id` (the unique ID from the bank/QRIS provider) is stored with a `UNIQUE` constraint in the ledger. This prevents the same physical receipt from being used for multiple submissions.
-*   **The Blind Verification Pattern**: The Admin dashboard does not show the "Amount Claimed" by the user initially. The Admin must enter the amount they see in the bank app. If the amounts do not match, the system flags the transaction for high-level review.
-*   **Accountability Trail**: Every approval is digitally signed with the `User.ID` of the Admin who performed it. This creates a "Paperless Trail" that can be audited during the mosque's monthly financial review.
-*   **Encapsulated Storage**: Receipt images are stored in a private directory or bucket. They are never served via public URLs; instead, they are accessed via **Temporal Signed URLs** that expire after 5 minutes, preventing unauthorized "harvesting" of donor receipts.
-
-### 8.3 Server-Sent Events (SSE) Architecture
-We use SSE instead of WebSockets to provide a robust, one-way real-time pipe from the Go backend to the Vue.js frontend. SSE is chosen for its native browser support, automatic reconnection logic, and lower overhead on the Go server.
-
-*   **Server-Side (Go)**: Uses Go Channels and an `EventBroadcaster` service. When a payment state changes, a message is sent to the channel, and the SSE handler flushes the data to the HTTP stream.
-*   **Client-Side (Vue.js)**: Uses the `EventSource` API within a Pinia store. The store listens for specific event types (e.g., `PAYMENT_STATUS_UPDATE`) and triggers reactive UI changes across the application.
-*   **Data Minimization**: To maintain security, the SSE stream only sends event "Signals" (e.g., `{"type": "NOTIF_NEW_PAYMENT", "id": "uuid"}`). The frontend then performs a standard, authenticated REST call to fetch the full data, ensuring RBAC rules are always enforced.

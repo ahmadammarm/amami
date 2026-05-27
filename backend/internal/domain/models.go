@@ -47,7 +47,7 @@ type Jamaah struct {
 	ID            uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	UserID        *uuid.UUID `gorm:"type:uuid;uniqueIndex"`
 	User          *User      `gorm:"constraint:OnDelete:SET NULL;"`
-	FullName      string     `gorm:"type:varchar(100);not null;index:idx_jamaah_name,class:gin,type:gin_trgm_ops"` // GIN Index for fast search
+	FullName      string     `gorm:"type:varchar(100);not null;index:idx_jamaah_name,type:gin,expression:full_name gin_trgm_ops"` // GIN Index for fast search
 	Phone         string     `gorm:"type:varchar(20)"`
 	Address       string     `gorm:"type:text"`
 	IsMustahik    bool       `gorm:"default:false;index"`
@@ -65,23 +65,6 @@ type Fund struct {
 	CurrentBalance int64  `gorm:"type:bigint;default:0"`
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
-}
-
-type PaymentSubmission struct {
-	ID              uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	JamaahID        uuid.UUID  `gorm:"type:uuid;index;not null"`
-	Jamaah          Jamaah     `gorm:"constraint:OnDelete:RESTRICT;"`
-	FundID          uint       `gorm:"index;not null"`
-	Fund            Fund       `gorm:"constraint:OnDelete:RESTRICT;"`
-	Amount          int64      `gorm:"type:bigint;not null"`
-	ReceiptURL      string     `gorm:"type:text;not null"`
-	Status          string     `gorm:"type:varchar(20);default:'PENDING';index"`
-	BankReferenceID *string    `gorm:"type:varchar(100);uniqueIndex"` // Provided by Admin during verification
-	VerifiedBy      *uuid.UUID `gorm:"type:uuid;index"`
-	Verifier        *User      `gorm:"foreignKey:VerifiedBy;constraint:OnDelete:SET NULL;"`
-	VerifiedAt      *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
 }
 
 type Transaction struct {
@@ -167,23 +150,67 @@ type QurbanAnimal struct {
 // --- 6. Inventory Module ---
 
 type Asset struct {
-	ID            uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	Name          string    `gorm:"type:varchar(255);index;not null"`
-	SKU           string    `gorm:"type:varchar(50);uniqueIndex"`
+	ID            uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	Name          string     `gorm:"type:varchar(255);index;not null"`
+	SKU           string     `gorm:"type:varchar(50);uniqueIndex"`
 	PurchaseDate  *time.Time
-	PurchasePrice int64     `gorm:"type:bigint"`
-	CurrentStatus string    `gorm:"type:varchar(20)"`
-	Location      string    `gorm:"type:varchar(100)"`
+	PurchasePrice int64      `gorm:"type:bigint"`
+	CurrentStatus string     `gorm:"type:varchar(20)"`
+	Location      string     `gorm:"type:varchar(100)"`
 }
 
 type AssetLoan struct {
-	ID             uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	AssetID        uuid.UUID `gorm:"type:uuid;index;not null"`
-	Asset          Asset     `gorm:"constraint:OnDelete:RESTRICT;"`
-	JamaahID       uuid.UUID `gorm:"type:uuid;index;not null"`
-	Jamaah         Jamaah    `gorm:"constraint:OnDelete:RESTRICT;"`
-	LoanDate       time.Time `gorm:"not null"`
+	ID             uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	AssetID        uuid.UUID  `gorm:"type:uuid;index;not null"`
+	Asset          Asset      `gorm:"constraint:OnDelete:RESTRICT;"`
+	JamaahID       uuid.UUID  `gorm:"type:uuid;index;not null"`
+	Jamaah         Jamaah     `gorm:"constraint:OnDelete:RESTRICT;"`
+	LoanDate       time.Time  `gorm:"not null"`
 	DueDate        *time.Time
-	ReturnDate     *time.Time `gorm:"index"` // Indexed to quickly find active loans (where ReturnDate is null)
+	ReturnDate     *time.Time `gorm:"index"` // Indexed to quickly find active loans
 	ConditionNotes string     `gorm:"type:text"`
+}
+
+// --- 7. System & Utility Module ---
+
+type SystemSetting struct {
+	ID       uint   `gorm:"primaryKey"`
+	Key      string `gorm:"type:varchar(50);uniqueIndex;not null"`
+	Value    string `gorm:"type:text;not null"`
+	IsSecret bool   `gorm:"default:false"`
+}
+
+type Memo struct {
+	ID        uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	Title     string    `gorm:"type:varchar(200);not null"`
+	Content   string    `gorm:"type:text;not null"`
+	AuthorID  uuid.UUID `gorm:"type:uuid;not null"`
+	Author    User      `gorm:"foreignKey:AuthorID;constraint:OnDelete:RESTRICT;"`
+	IsPinned  bool      `gorm:"default:false"`
+	CreatedAt time.Time `gorm:"index"`
+}
+
+// --- 8. Logistics & Event Module ---
+
+type Agenda struct {
+	ID          uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	Title       string     `gorm:"type:varchar(200);not null"`
+	Description string     `gorm:"type:text"`
+	StartTime   time.Time  `gorm:"not null;index"`
+	EndTime     time.Time  `gorm:"not null"`
+	Location    string     `gorm:"type:varchar(100)"`
+	Status      string     `gorm:"type:varchar(20);index"`
+	CreatedByID *uuid.UUID `gorm:"type:uuid"`
+	Creator     *User      `gorm:"foreignKey:CreatedByID;constraint:OnDelete:SET NULL;"`
+}
+
+type AgendaDocumentation struct {
+	ID         uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	AgendaID   uuid.UUID `gorm:"type:uuid;index;not null"`
+	Agenda     Agenda    `gorm:"constraint:OnDelete:CASCADE;"`
+	FileURL    string    `gorm:"type:text;not null"`
+	FileType   string    `gorm:"type:varchar(50)"`
+	UploadedBy *uuid.UUID `gorm:"type:uuid"`
+	Uploader   *User     `gorm:"foreignKey:UploadedBy;constraint:OnDelete:SET NULL;"`
+	UploadedAt time.Time `gorm:"default:now()"`
 }
