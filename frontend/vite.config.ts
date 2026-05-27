@@ -4,10 +4,11 @@ import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
-  plugins: [vue(), tailwindcss()],
+  plugins: [tailwindcss(), vue()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@/components/ui': path.resolve(__dirname, './src/components/atoms'),
     },
   },
 })

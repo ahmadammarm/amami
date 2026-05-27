@@ -11,6 +11,7 @@ import (
 	"github.com/ahmadammarm/amami/backend/internal/di"
 	"github.com/ahmadammarm/amami/backend/internal/middleware"
 	"github.com/ahmadammarm/amami/backend/pkg/logger"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -39,6 +40,16 @@ func main() {
 
 	r := gin.Default()
 
+	// Configure CORS
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:5173", "http://127.0.0.1:5173"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
 	// Fix Gin warning by setting trusted proxies
 	_ = r.SetTrustedProxies(nil)
 
@@ -49,6 +60,7 @@ func main() {
 		auth := v1.Group("/auth")
 		{
 			auth.POST("/login", middleware.RateLimit(5, time.Minute), config.AuthHandler.Login)
+			auth.GET("/me", middleware.RequireAuth(), config.AuthHandler.GetMe)
 		}
 
 		// User Management Module (Protected)

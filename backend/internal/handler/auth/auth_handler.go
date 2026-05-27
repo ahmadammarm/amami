@@ -8,11 +8,13 @@ import (
 	"github.com/ahmadammarm/amami/backend/pkg/logger"
 	"github.com/ahmadammarm/amami/backend/pkg/utils"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 type AuthHandler interface {
 	Login(c *gin.Context)
+	GetMe(c *gin.Context)
 }
 
 type authHandler struct {
@@ -43,4 +45,26 @@ func (h *authHandler) Login(c *gin.Context) {
 
 	logger.Info("Login successful", zap.String("email", req.Email))
 	utils.SuccessResponse(c, "Login successful", res)
+}
+
+func (h *authHandler) GetMe(c *gin.Context) {
+	userIDStr, exists := c.Get("user_id")
+	if !exists {
+		utils.ErrorResponse(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	userID, err := uuid.Parse(userIDStr.(string))
+	if err != nil {
+		utils.ErrorResponse(c, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	user, err := h.authService.GetMe(userID)
+	if err != nil {
+		utils.ErrorResponse(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	utils.SuccessResponse(c, "User info fetched successfully", user)
 }
