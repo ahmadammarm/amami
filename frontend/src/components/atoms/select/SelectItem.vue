@@ -4,7 +4,7 @@ import type { HTMLAttributes } from "vue"
 import { Check } from "@lucide/vue"
 import { reactiveOmit } from "@vueuse/core"
 import {
-  SelectItem,
+  SelectItem as RekaSelectItem,
   SelectItemIndicator,
   SelectItemText,
   useForwardProps,
@@ -19,7 +19,7 @@ const forwardedProps = useForwardProps(delegatedProps)
 </script>
 
 <template>
-  <SelectItem
+  <RekaSelectItem
     data-slot="select-item"
     v-bind="forwardedProps"
     :class="
@@ -40,5 +40,5 @@ const forwardedProps = useForwardProps(delegatedProps)
     <SelectItemText>
       <slot />
     </SelectItemText>
-  </SelectItem>
+  </RekaSelectItem>
 </template>

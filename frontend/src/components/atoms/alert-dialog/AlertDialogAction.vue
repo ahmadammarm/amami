@@ -2,9 +2,9 @@
 import type { AlertDialogActionProps } from "reka-ui"
 import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
-import { AlertDialogAction } from "reka-ui"
+import { AlertDialogAction as RekaAlertDialogAction } from "reka-ui"
 import { cn } from "@/lib/utils"
-import { buttonVariants } from '@/components/ui/button'
+import { buttonVariants } from '@/components/atoms/button'
 
 const props = defineProps<AlertDialogActionProps & { class?: HTMLAttributes["class"] }>()
 
@@ -12,7 +12,7 @@ const delegatedProps = reactiveOmit(props, "class")
 </script>
 
 <template>
-  <AlertDialogAction v-bind="delegatedProps" :class="cn(buttonVariants(), props.class)">
+  <RekaAlertDialogAction v-bind="delegatedProps" :class="cn(buttonVariants(), props.class)">
     <slot />
-  </AlertDialogAction>
+  </RekaAlertDialogAction>
 </template>

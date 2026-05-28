@@ -4,7 +4,7 @@ import type { HTMLAttributes } from "vue"
 import { Check } from "@lucide/vue"
 import { reactiveOmit } from "@vueuse/core"
 import {
-  MenubarCheckboxItem,
+  MenubarCheckboxItem as RekaMenubarCheckboxItem,
   MenubarItemIndicator,
   useForwardPropsEmits,
 } from "reka-ui"
@@ -19,7 +19,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <template>
-  <MenubarCheckboxItem
+  <RekaMenubarCheckboxItem
     data-slot="menubar-checkbox-item"
     v-bind="forwarded"
     :class="cn(
@@ -35,5 +35,5 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       </MenubarItemIndicator>
     </span>
     <slot />
-  </MenubarCheckboxItem>
+  </RekaMenubarCheckboxItem>
 </template>

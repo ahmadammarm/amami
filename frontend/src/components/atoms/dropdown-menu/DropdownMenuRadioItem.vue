@@ -5,7 +5,7 @@ import { Circle } from "@lucide/vue"
 import { reactiveOmit } from "@vueuse/core"
 import {
   DropdownMenuItemIndicator,
-  DropdownMenuRadioItem,
+  DropdownMenuRadioItem as RekaDropdownMenuRadioItem,
   useForwardPropsEmits,
 } from "reka-ui"
 import { cn } from "@/lib/utils"
@@ -20,7 +20,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <template>
-  <DropdownMenuRadioItem
+  <RekaDropdownMenuRadioItem
     data-slot="dropdown-menu-radio-item"
     v-bind="forwarded"
     :class="cn(
@@ -36,5 +36,5 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       </DropdownMenuItemIndicator>
     </span>
     <slot />
-  </DropdownMenuRadioItem>
+  </RekaDropdownMenuRadioItem>
 </template>

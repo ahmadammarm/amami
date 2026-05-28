@@ -48,15 +48,15 @@ func (h *authHandler) Login(c *gin.Context) {
 }
 
 func (h *authHandler) GetMe(c *gin.Context) {
-	userIDStr, exists := c.Get("user_id")
+	userIDVal, exists := c.Get("user_id")
 	if !exists {
 		utils.ErrorResponse(c, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
-	userID, err := uuid.Parse(userIDStr.(string))
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "invalid user id")
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		utils.ErrorResponse(c, http.StatusInternalServerError, "invalid user id type in context")
 		return
 	}
 

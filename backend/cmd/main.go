@@ -80,7 +80,11 @@ func main() {
 			protected := settings.Group("", middleware.RequireAuth())
 			{
 				protected.PUT("/profile", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.UpdateMosqueProfile)
+				protected.GET("/smtp", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.GetSMTPConfig)
 				protected.PUT("/smtp", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.UpdateSMTPConfig)
+				protected.POST("/smtp/test", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.TestSMTPConnection)
+				protected.GET("/health", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.GetSystemHealth)
+				protected.GET("/audit", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.GetAuditLogs)
 			}
 		}
 	}

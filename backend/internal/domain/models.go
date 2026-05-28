@@ -214,3 +214,14 @@ type AgendaDocumentation struct {
 	Uploader   *User     `gorm:"foreignKey:UploadedBy;constraint:OnDelete:SET NULL;"`
 	UploadedAt time.Time `gorm:"default:now()"`
 }
+
+type AuditLog struct {
+	ID        uint      `gorm:"primaryKey"`
+	UserID    uuid.UUID `gorm:"type:uuid;index;not null"`
+	User      User      `gorm:"constraint:OnDelete:RESTRICT;"`
+	Action    string    `gorm:"type:varchar(50);not null"`
+	Entity    string    `gorm:"type:varchar(50);not null"`
+	EntityID  string    `gorm:"type:varchar(100)"`
+	Metadata  string    `gorm:"type:text"`
+	CreatedAt time.Time `gorm:"index;default:now()"`
+}

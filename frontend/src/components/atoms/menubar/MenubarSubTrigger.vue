@@ -3,7 +3,7 @@ import type { MenubarSubTriggerProps } from "reka-ui"
 import type { HTMLAttributes } from "vue"
 import { ChevronRight } from "@lucide/vue"
 import { reactiveOmit } from "@vueuse/core"
-import { MenubarSubTrigger, useForwardProps } from "reka-ui"
+import { MenubarSubTrigger as RekaMenubarSubTrigger, useForwardProps } from "reka-ui"
 import { cn } from "@/lib/utils"
 
 const props = defineProps<MenubarSubTriggerProps & { class?: HTMLAttributes["class"], inset?: boolean }>()
@@ -13,7 +13,7 @@ const forwardedProps = useForwardProps(delegatedProps)
 </script>
 
 <template>
-  <MenubarSubTrigger
+  <RekaMenubarSubTrigger
     data-slot="menubar-sub-trigger"
     :data-inset="inset ? '' : undefined"
     v-bind="forwardedProps"
@@ -24,5 +24,5 @@ const forwardedProps = useForwardProps(delegatedProps)
   >
     <slot />
     <ChevronRight class="ml-auto size-4" />
-  </MenubarSubTrigger>
+  </RekaMenubarSubTrigger>
 </template>

@@ -38,6 +38,19 @@ func NewDatabase(cfg *config.Config) *gorm.DB {
 		&domain.Jamaah{},
 		&domain.Fund{},
 		&domain.Transaction{},
+		&domain.ZakatDonation{},
+		&domain.MustahikData{},
+		&domain.ZakatDistribution{},
+		&domain.QurbanPackage{},
+		&domain.QurbanBooking{},
+		&domain.QurbanAnimal{},
+		&domain.Asset{},
+		&domain.AssetLoan{},
+		&domain.SystemSetting{},
+		&domain.Memo{},
+		&domain.Agenda{},
+		&domain.AgendaDocumentation{},
+		&domain.AuditLog{},
 	)
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)

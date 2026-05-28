@@ -3,6 +3,7 @@ package auth
 import (
 	"errors"
 
+	"github.com/ahmadammarm/amami/backend/internal/domain"
 	"github.com/ahmadammarm/amami/backend/internal/dto/auth"
 	"github.com/ahmadammarm/amami/backend/internal/dto/user"
 	repo "github.com/ahmadammarm/amami/backend/internal/repository/auth"
@@ -41,6 +42,13 @@ func (s *authService) Login(req auth.LoginRequest) (*auth.LoginResponse, error) 
 	if err != nil {
 		return nil, errors.New("failed to generate token")
 	}
+
+	// Record Audit Log
+	s.userRepo.CreateAuditLog(domain.AuditLog{
+		UserID: user.ID,
+		Action: "LOGIN",
+		Entity: "User Session",
+	})
 
 	return &auth.LoginResponse{Token: token}, nil
 }

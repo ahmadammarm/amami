@@ -3,7 +3,7 @@ import type { DropdownMenuSubContentEmits, DropdownMenuSubContentProps } from "r
 import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
 import {
-  ContextMenuSubContent,
+  ContextMenuSubContent as RekaContextMenuSubContent,
   useForwardPropsEmits,
 } from "reka-ui"
 import { cn } from "@/lib/utils"
@@ -17,7 +17,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <template>
-  <ContextMenuSubContent
+  <RekaContextMenuSubContent
     data-slot="context-menu-sub-content"
     v-bind="forwarded"
     :class="
@@ -28,5 +28,5 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
     "
   >
     <slot />
-  </ContextMenuSubContent>
+  </RekaContextMenuSubContent>
 </template>

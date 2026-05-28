@@ -5,7 +5,7 @@ import { Circle } from "@lucide/vue"
 import { reactiveOmit } from "@vueuse/core"
 import {
   MenubarItemIndicator,
-  MenubarRadioItem,
+  MenubarRadioItem as RekaMenubarRadioItem,
   useForwardPropsEmits,
 } from "reka-ui"
 import { cn } from "@/lib/utils"
@@ -19,7 +19,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <template>
-  <MenubarRadioItem
+  <RekaMenubarRadioItem
     data-slot="menubar-radio-item"
     v-bind="forwarded"
     :class="cn(
@@ -35,5 +35,5 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       </MenubarItemIndicator>
     </span>
     <slot />
-  </MenubarRadioItem>
+  </RekaMenubarRadioItem>
 </template>

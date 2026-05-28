@@ -3,7 +3,7 @@ import type { ContextMenuContentEmits, ContextMenuContentProps } from "reka-ui"
 import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
 import {
-  ContextMenuContent,
+  ContextMenuContent as RekaContextMenuContent,
   ContextMenuPortal,
   useForwardPropsEmits,
 } from "reka-ui"
@@ -23,7 +23,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 
 <template>
   <ContextMenuPortal>
-    <ContextMenuContent
+    <RekaContextMenuContent
       data-slot="context-menu-content"
       v-bind="{ ...$attrs, ...forwarded }"
       :class="cn(
@@ -32,6 +32,6 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       )"
     >
       <slot />
-    </ContextMenuContent>
+    </RekaContextMenuContent>
   </ContextMenuPortal>
 </template>

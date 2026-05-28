@@ -3,7 +3,7 @@ import type { HoverCardContentProps } from "reka-ui"
 import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
 import {
-  HoverCardContent,
+  HoverCardContent as RekaHoverCardContent,
   HoverCardPortal,
   useForwardProps,
 } from "reka-ui"
@@ -27,7 +27,7 @@ const forwardedProps = useForwardProps(delegatedProps)
 
 <template>
   <HoverCardPortal>
-    <HoverCardContent
+    <RekaHoverCardContent
       data-slot="hover-card-content"
       v-bind="{ ...$attrs, ...forwardedProps }"
       :class="
@@ -38,6 +38,6 @@ const forwardedProps = useForwardProps(delegatedProps)
       "
     >
       <slot />
-    </HoverCardContent>
+    </RekaHoverCardContent>
   </HoverCardPortal>
 </template>

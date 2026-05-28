@@ -3,7 +3,7 @@ import type { AlertDialogDescriptionProps } from "reka-ui"
 import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
 import {
-  AlertDialogDescription,
+  AlertDialogDescription as RekaAlertDialogDescription,
 } from "reka-ui"
 import { cn } from "@/lib/utils"
 
@@ -13,11 +13,11 @@ const delegatedProps = reactiveOmit(props, "class")
 </script>
 
 <template>
-  <AlertDialogDescription
+  <RekaAlertDialogDescription
     data-slot="alert-dialog-description"
     v-bind="delegatedProps"
     :class="cn('text-muted-foreground text-sm', props.class)"
   >
     <slot />
-  </AlertDialogDescription>
+  </RekaAlertDialogDescription>
 </template>

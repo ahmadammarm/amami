@@ -3,7 +3,7 @@ import type { MenubarItemEmits, MenubarItemProps } from "reka-ui"
 import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
 import {
-  MenubarItem,
+  MenubarItem as RekaMenubarItem,
   useForwardPropsEmits,
 } from "reka-ui"
 import { cn } from "@/lib/utils"
@@ -21,7 +21,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <template>
-  <MenubarItem
+  <RekaMenubarItem
     data-slot="menubar-item"
     :data-inset="inset ? '' : undefined"
     :data-variant="variant"
@@ -32,5 +32,5 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
     )"
   >
     <slot />
-  </MenubarItem>
+  </RekaMenubarItem>
 </template>

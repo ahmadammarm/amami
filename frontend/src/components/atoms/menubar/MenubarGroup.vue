@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import type { MenubarGroupProps } from "reka-ui"
-import { MenubarGroup } from "reka-ui"
+import { MenubarGroup as RekaMenubarGroup } from "reka-ui"
 
 const props = defineProps<MenubarGroupProps>()
 </script>
 
 <template>
-  <MenubarGroup
+  <RekaMenubarGroup
     data-slot="menubar-group"
     v-bind="props"
   >
     <slot />
-  </MenubarGroup>
+  </RekaMenubarGroup>
 </template>

@@ -2,6 +2,7 @@ package seed
 
 import (
 	"log"
+	"time"
 
 	"github.com/ahmadammarm/amami/backend/internal/domain"
 	"github.com/ahmadammarm/amami/backend/pkg/utils"
@@ -91,6 +92,40 @@ func Seed(db *gorm.DB) error {
 
 	if err := db.FirstOrCreate(&superAdmin, domain.User{Username: "admin"}).Error; err != nil {
 		return err
+	}
+
+	// 5. Seed System Settings
+	defaultSettings := []domain.SystemSetting{
+		{Key: "mosque_name", Value: "Masjid Agung Al-Hikmah"},
+		{Key: "mosque_address", Value: "Jl. Merdeka No. 1, Kota Amanah"},
+		{Key: "mosque_phone", Value: "021-1234567"},
+		{Key: "mosque_logo", Value: "/icons.svg"},
+		{Key: "legal_yayasan_id", Value: "YAYASAN-AH-001"},
+		{Key: "smtp_host", Value: "smtp.example.com"},
+		{Key: "smtp_port", Value: "587"},
+		{Key: "smtp_user", Value: "admin@amami.org"},
+		{Key: "smtp_from", Value: "no-reply@amami.org"},
+	}
+
+	for _, s := range defaultSettings {
+		if err := db.FirstOrCreate(&s, domain.SystemSetting{Key: s.Key}).Error; err != nil {
+			return err
+		}
+	}
+
+	// 6. Seed Audit Logs
+	for i := 1; i <= 25; i++ {
+		action := "UPDATE"
+		if i%3 == 0 { action = "LOGIN" }
+		if i%5 == 0 { action = "CREATE" }
+		
+		log := domain.AuditLog{
+			UserID:    superAdmin.ID,
+			Action:    action,
+			Entity:    "System Configuration",
+			CreatedAt: time.Now().Add(time.Duration(-i) * time.Hour),
+		}
+		db.Create(&log)
 	}
 
 	log.Println("Seeding completed successfully!")

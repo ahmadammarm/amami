@@ -3,7 +3,7 @@ import type { PopoverContentEmits, PopoverContentProps } from "reka-ui"
 import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
 import {
-  PopoverContent,
+  PopoverContent as RekaPopoverContent,
   PopoverPortal,
   useForwardPropsEmits,
 } from "reka-ui"
@@ -29,7 +29,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 
 <template>
   <PopoverPortal>
-    <PopoverContent
+    <RekaPopoverContent
       data-slot="popover-content"
       v-bind="{ ...$attrs, ...forwarded }"
       :class="
@@ -40,6 +40,6 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       "
     >
       <slot />
-    </PopoverContent>
+    </RekaPopoverContent>
   </PopoverPortal>
 </template>

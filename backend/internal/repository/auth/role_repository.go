@@ -20,21 +20,22 @@ func NewRoleRepository(db *gorm.DB) RoleRepository {
 
 func (r *roleRepository) FindByID(id uint) (*domain.Role, error) {
 	var role domain.Role
-	if err := r.db.First(&role, id).Error; err != nil {
+	if err := r.db.Select("id", "name").First(&role, id).Error; err != nil {
 		return nil, err
 	}
 	return &role, nil
 }
 
-func (r *roleRepository) FindPermissionsByRoleID(roleID uint) ([]domain.Permission, error) {
-	var rolePermissions []domain.RolePermission
-	if err := r.db.Preload("Permission").Where("role_id = ?", roleID).Find(&rolePermissions).Error; err != nil {
+func (h *roleRepository) FindPermissionsByRoleID(roleID uint) ([]domain.Permission, error) {
+	var permissions []domain.Permission
+	err := h.db.Table("permissions").
+		Joins("JOIN role_permissions ON role_permissions.permission_id = permissions.id").
+		Where("role_permissions.role_id = ?", roleID).
+		Select("permissions.id", "permissions.code"). // Only select necessary fields
+		Find(&permissions).Error
+	
+	if err != nil {
 		return nil, err
-	}
-
-	permissions := make([]domain.Permission, len(rolePermissions))
-	for i, rp := range rolePermissions {
-		permissions[i] = rp.Permission
 	}
 	return permissions, nil
 }

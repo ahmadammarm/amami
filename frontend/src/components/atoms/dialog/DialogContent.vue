@@ -5,7 +5,7 @@ import { X } from "@lucide/vue"
 import { reactiveOmit } from "@vueuse/core"
 import {
   DialogClose,
-  DialogContent,
+  DialogContent as RekaDialogContent,
   DialogPortal,
   useForwardPropsEmits,
 } from "reka-ui"
@@ -29,7 +29,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 <template>
   <DialogPortal>
     <DialogOverlay />
-    <DialogContent
+    <RekaDialogContent
       data-slot="dialog-content"
       v-bind="{ ...$attrs, ...forwarded }"
       :class="
@@ -48,6 +48,6 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
         <X />
         <span class="sr-only">Close</span>
       </DialogClose>
-    </DialogContent>
+    </RekaDialogContent>
   </DialogPortal>
 </template>

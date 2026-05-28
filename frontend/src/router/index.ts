@@ -17,6 +17,11 @@ const routes: RouteRecordRaw[] = [
         name: 'Dashboard',
         component: () => import('../components/pages/DashboardPage.vue'),
       },
+      {
+        path: 'settings',
+        name: 'Settings',
+        component: () => import('../components/pages/SettingsPage.vue'),
+      },
       // Other protected routes will go here
     ],
     meta: { requiresAuth: true },

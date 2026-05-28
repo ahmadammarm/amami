@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ContextMenuSubEmits, ContextMenuSubProps } from "reka-ui"
 import {
-  ContextMenuSub,
+  ContextMenuSub as RekaContextMenuSub,
   useForwardPropsEmits,
 } from "reka-ui"
 
@@ -12,10 +12,10 @@ const forwarded = useForwardPropsEmits(props, emits)
 </script>
 
 <template>
-  <ContextMenuSub
+  <RekaContextMenuSub
     data-slot="context-menu-sub"
     v-bind="forwarded"
   >
     <slot />
-  </ContextMenuSub>
+  </RekaContextMenuSub>
 </template>

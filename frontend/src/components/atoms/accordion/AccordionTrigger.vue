@@ -5,7 +5,7 @@ import { ChevronDown } from "@lucide/vue"
 import { reactiveOmit } from "@vueuse/core"
 import {
   AccordionHeader,
-  AccordionTrigger,
+  AccordionTrigger as RekaAccordionTrigger,
 } from "reka-ui"
 import { cn } from "@/lib/utils"
 
@@ -16,7 +16,7 @@ const delegatedProps = reactiveOmit(props, "class")
 
 <template>
   <AccordionHeader class="flex">
-    <AccordionTrigger
+    <RekaAccordionTrigger
       data-slot="accordion-trigger"
       v-bind="delegatedProps"
       :class="
@@ -32,6 +32,6 @@ const delegatedProps = reactiveOmit(props, "class")
           class="text-muted-foreground pointer-events-none size-4 shrink-0 translate-y-0.5 transition-transform duration-200"
         />
       </slot>
-    </AccordionTrigger>
+    </RekaAccordionTrigger>
   </AccordionHeader>
 </template>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ContextMenuRadioGroupEmits, ContextMenuRadioGroupProps } from "reka-ui"
 import {
-  ContextMenuRadioGroup,
+  ContextMenuRadioGroup as RekaContextMenuRadioGroup,
   useForwardPropsEmits,
 } from "reka-ui"
 
@@ -12,10 +12,10 @@ const forwarded = useForwardPropsEmits(props, emits)
 </script>
 
 <template>
-  <ContextMenuRadioGroup
+  <RekaContextMenuRadioGroup
     data-slot="context-menu-radio-group"
     v-bind="forwarded"
   >
     <slot />
-  </ContextMenuRadioGroup>
+  </RekaContextMenuRadioGroup>
 </template>

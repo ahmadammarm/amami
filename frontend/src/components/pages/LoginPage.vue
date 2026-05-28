@@ -37,8 +37,8 @@ const onSubmit = handleSubmit(async (values) => {
     authStore.setToken(token);
     await authStore.fetchUser();
     
-    toast.success('Login successful');
-    router.push('/');
+    // Redirect immediately to dashboard with success query param
+    router.push({ path: '/', query: { loginSuccess: 'true' } });
   } catch (error) {
     let message = 'Invalid email or password';
     if (axios.isAxiosError(error)) {

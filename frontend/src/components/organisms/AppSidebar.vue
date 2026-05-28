@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../../stores/auth';
 import { 
@@ -9,12 +9,25 @@ import {
   Beef, 
   Users, 
   Settings, 
-  LogOut 
+  LogOut,
+  X
 } from 'lucide-vue-next';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../atoms/alert-dialog';
 
 const authStore = useAuthStore();
 const router = useRouter();
 const route = useRoute();
+
+const emit = defineEmits(['close']);
 
 const menuItems = [
   { name: 'Dashboard', icon: LayoutDashboard, path: '/', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
@@ -31,6 +44,8 @@ const filteredMenu = computed(() => {
   return menuItems.filter(item => item.roles.includes(role));
 });
 
+const isLogoutDialogOpen = ref(false);
+
 const handleLogout = () => {
   authStore.logout();
   router.push('/login');
@@ -39,11 +54,16 @@ const handleLogout = () => {
 
 <template>
   <aside class="w-64 bg-white border-r border-gray-100 flex flex-col h-full shadow-md">
-    <div class="p-6 border-b border-gray-50 mb-4">
-      <h1 class="text-2xl font-bold text-primary flex items-center gap-2">
-        amami
-      </h1>
-      <p class="text-xs text-gray-400 mt-1 uppercase tracking-wider font-semibold">Mosque Intelligence</p>
+    <div class="p-6 border-b border-gray-50 mb-4 flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-primary flex items-center gap-2">
+          amami
+        </h1>
+        <p class="text-xs text-gray-400 mt-1 uppercase tracking-wider font-semibold">Mosque Intelligence</p>
+      </div>
+      <button @click="emit('close')" class="lg:hidden p-2 text-gray-400 hover:text-gray-600">
+        <X class="w-5 h-5" />
+      </button>
     </div>
 
     <nav class="flex-1 px-4 space-y-1">
@@ -51,6 +71,7 @@ const handleLogout = () => {
         v-for="item in filteredMenu"
         :key="item.name"
         :to="item.path"
+        @click="emit('close')"
         class="flex items-center gap-3 px-4 py-3 text-sm font-medium transition-all duration-200 rounded-lg group"
         :class="[
           route.path === item.path
@@ -75,12 +96,33 @@ const handleLogout = () => {
       </div>
       
       <button
-        @click="handleLogout"
+        @click="isLogoutDialogOpen = true"
         class="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 hover:bg-red-50 rounded-lg transition-colors duration-200"
       >
         <LogOut class="w-5 h-5" />
         Logout
       </button>
     </div>
+
+    <!-- Logout Confirmation Dialog -->
+    <AlertDialog v-model:open="isLogoutDialogOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Are you sure you want to logout?</AlertDialogTitle>
+          <AlertDialogDescription>
+            You will need to login again to access your account and mosque data.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction 
+            @click="handleLogout"
+            class="bg-red-500 hover:bg-red-600 focus:ring-red-500"
+          >
+            Logout
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </aside>
 </template>
