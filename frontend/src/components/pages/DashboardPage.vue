@@ -11,8 +11,8 @@ const route = useRoute();
 const router = useRouter();
 const { data: profile, isLoading } = useMosqueProfileQuery();
 
-// Fetch last 7 activity logs
-const { data: auditData, isLoading: isLogsLoading } = useAuditLogsQuery(1, 7);
+// Fetch last 5 activity logs
+const { data: auditData, isLoading: isLogsLoading } = useAuditLogsQuery(1, 5);
 const recentActivities = computed(() => auditData.value?.logs || []);
 
 const showLoginSuccess = ref(false);
@@ -89,7 +89,7 @@ onMounted(() => {
             <History class="w-5 h-5 text-primary" />
             Recent Activities
           </h3>
-          <router-link to="/settings" class="text-xs font-bold text-primary hover:underline uppercase tracking-tighter">View All</router-link>
+          <router-link v-if="authStore.userRole === 'SUPER_ADMIN'" to="/settings" class="text-xs font-bold text-primary hover:underline uppercase tracking-tighter">View All</router-link>
         </div>
         
         <div class="flex-1 overflow-y-auto max-h-[500px]">

@@ -74,13 +74,19 @@ func (h *settingsHandler) GetSystemHealth(c *gin.Context) {
 }
 
 func (h *settingsHandler) GetAuditLogs(c *gin.Context) {
+	userIDVal, _ := c.Get("user_id")
+	roleIDVal, _ := c.Get("role_id")
+	
+	userID := userIDVal.(uuid.UUID)
+	roleID := roleIDVal.(uint)
+
 	pageStr := c.DefaultQuery("page", "1")
 	limitStr := c.DefaultQuery("limit", "10")
 	
 	page, _ := strconv.Atoi(pageStr)
 	limit, _ := strconv.Atoi(limitStr)
 
-	logs, err := h.svc.GetAuditLogs(page, limit)
+	logs, err := h.svc.GetAuditLogs(page, limit, userID, roleID)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to fetch audit logs")
 		return

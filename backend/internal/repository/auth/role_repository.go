@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"sync"
+
 	"github.com/ahmadammarm/amami/backend/internal/domain"
 	"gorm.io/gorm"
 )
@@ -11,11 +13,14 @@ type RoleRepository interface {
 }
 
 type roleRepository struct {
-	db *gorm.DB
+	db              *gorm.DB
+	permissionCache sync.Map
 }
 
 func NewRoleRepository(db *gorm.DB) RoleRepository {
-	return &roleRepository{db: db}
+	return &roleRepository{
+		db: db,
+	}
 }
 
 func (r *roleRepository) FindByID(id uint) (*domain.Role, error) {
@@ -26,16 +31,26 @@ func (r *roleRepository) FindByID(id uint) (*domain.Role, error) {
 	return &role, nil
 }
 
-func (h *roleRepository) FindPermissionsByRoleID(roleID uint) ([]domain.Permission, error) {
+func (r *roleRepository) FindPermissionsByRoleID(roleID uint) ([]domain.Permission, error) {
+	// Check cache first
+	if val, ok := r.permissionCache.Load(roleID); ok {
+		return val.([]domain.Permission), nil
+	}
+
+	// If not in cache, query the database
 	var permissions []domain.Permission
-	err := h.db.Table("permissions").
+	err := r.db.Table("permissions").
 		Joins("JOIN role_permissions ON role_permissions.permission_id = permissions.id").
 		Where("role_permissions.role_id = ?", roleID).
-		Select("permissions.id", "permissions.code"). // Only select necessary fields
+		Select("permissions.id", "permissions.code").
 		Find(&permissions).Error
 	
 	if err != nil {
 		return nil, err
 	}
+
+	// Store in cache
+	r.permissionCache.Store(roleID, permissions)
+
 	return permissions, nil
 }

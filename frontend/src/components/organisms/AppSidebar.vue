@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { useRouter, useRoute } from 'vue-router';
+import { computed } from 'vue';
+import { useRoute } from 'vue-router';
 import { useAuthStore } from '../../stores/auth';
 import { 
   LayoutDashboard, 
@@ -9,33 +9,26 @@ import {
   Beef, 
   Users, 
   Settings, 
-  LogOut,
-  X
+  X,
+  PackageSearch,
+  CalendarRange
 } from 'lucide-vue-next';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '../atoms/alert-dialog';
 
 const authStore = useAuthStore();
-const router = useRouter();
 const route = useRoute();
 
 const emit = defineEmits(['close']);
 
 const menuItems = [
   { name: 'Dashboard', icon: LayoutDashboard, path: '/', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
-  { name: 'Finance', icon: Wallet, path: '/finance', roles: ['SUPER_ADMIN', 'BENDAHARA'] },
-  { name: 'Zakat', icon: HandCoins, path: '/zakat', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR'] },
-  { name: 'Qurban', icon: Beef, path: '/qurban', roles: ['SUPER_ADMIN', 'TAKMIR'] },
-  { name: 'Users', icon: Users, path: '/users', roles: ['SUPER_ADMIN'] },
+  { name: 'Finance', icon: Wallet, path: '/finance', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS'] },
+  { name: 'Zakat', icon: HandCoins, path: '/zakat', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
+  { name: 'Jamaah', icon: Users, path: '/jamaah', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS'] },
+  { name: 'Qurban', icon: Beef, path: '/qurban', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
+  { name: 'Inventory', icon: PackageSearch, path: '/inventory', roles: ['SUPER_ADMIN', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
+  { name: 'Logistics', icon: CalendarRange, path: '/logistics', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
   { name: 'Settings', icon: Settings, path: '/settings', roles: ['SUPER_ADMIN', 'SEKRETARIS'] },
+  { name: 'Users', icon: Users, path: '/users', roles: ['SUPER_ADMIN'] },
 ];
 
 const filteredMenu = computed(() => {
@@ -43,18 +36,11 @@ const filteredMenu = computed(() => {
   if (!role) return [];
   return menuItems.filter(item => item.roles.includes(role));
 });
-
-const isLogoutDialogOpen = ref(false);
-
-const handleLogout = () => {
-  authStore.logout();
-  router.push('/login');
-};
 </script>
 
 <template>
-  <aside class="w-64 bg-white border-r border-gray-100 flex flex-col h-full shadow-md">
-    <div class="p-6 border-b border-gray-50 mb-4 flex items-center justify-between">
+  <aside class="w-64 bg-white border-r border-gray-100 flex flex-col h-full shadow-sm relative z-20">
+    <div class="p-6 border-b border-gray-50 mb-4 flex items-center justify-between sticky top-0 bg-white z-10">
       <div>
         <h1 class="text-2xl font-bold text-primary flex items-center gap-2">
           amami
@@ -66,7 +52,7 @@ const handleLogout = () => {
       </button>
     </div>
 
-    <nav class="flex-1 px-4 space-y-1">
+    <nav class="flex-1 px-4 space-y-1 overflow-y-auto pb-4">
       <router-link
         v-for="item in filteredMenu"
         :key="item.name"
@@ -83,46 +69,5 @@ const handleLogout = () => {
         {{ item.name }}
       </router-link>
     </nav>
-
-    <div class="p-4 border-t border-gray-50">
-      <div v-if="authStore.user" class="mb-4 px-4 py-3 bg-gray-50 rounded-lg flex items-center gap-3">
-        <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs uppercase">
-          {{ authStore.user.username.charAt(0) }}
-        </div>
-        <div class="overflow-hidden">
-          <p class="text-sm font-semibold text-gray-700 truncate">{{ authStore.user.username }}</p>
-          <p class="text-xs text-gray-400 font-medium uppercase">{{ authStore.user.role_name }}</p>
-        </div>
-      </div>
-      
-      <button
-        @click="isLogoutDialogOpen = true"
-        class="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 hover:bg-red-50 rounded-lg transition-colors duration-200"
-      >
-        <LogOut class="w-5 h-5" />
-        Logout
-      </button>
-    </div>
-
-    <!-- Logout Confirmation Dialog -->
-    <AlertDialog v-model:open="isLogoutDialogOpen">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Are you sure you want to logout?</AlertDialogTitle>
-          <AlertDialogDescription>
-            You will need to login again to access your account and mosque data.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction 
-            @click="handleLogout"
-            class="bg-red-500 hover:bg-red-600 focus:ring-red-500"
-          >
-            Logout
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   </aside>
 </template>

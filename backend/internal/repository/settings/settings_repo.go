@@ -2,6 +2,7 @@ package settings
 
 import (
 	"github.com/ahmadammarm/amami/backend/internal/domain"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -11,7 +12,7 @@ type SettingsRepository interface {
 	GetSetting(key string) (*domain.SystemSetting, error)
 	GetAllSettings() ([]domain.SystemSetting, error)
 	Ping() error
-	GetAuditLogs(page, limit int) ([]domain.AuditLog, int64, error)
+	GetAuditLogs(page, limit int, userID uuid.UUID, roleID uint) ([]domain.AuditLog, int64, error)
 	CreateAuditLog(log domain.AuditLog) error
 }
 
@@ -60,20 +61,48 @@ func (r *settingsRepository) Ping() error {
 	return sqlDB.Ping()
 }
 
-func (r *settingsRepository) GetAuditLogs(page, limit int) ([]domain.AuditLog, int64, error) {
+func (r *settingsRepository) GetAuditLogs(page, limit int, userID uuid.UUID, roleID uint) ([]domain.AuditLog, int64, error) {
 	var logs []domain.AuditLog
 	var total int64
 
-	// Count total records for pagination
-	if err := r.db.Model(&domain.AuditLog{}).Count(&total).Error; err != nil {
+	// 1. Get Requester Role Name
+	var requesterRole domain.Role
+	if err := r.db.Select("name").First(&requesterRole, roleID).Error; err != nil {
 		return nil, 0, err
 	}
 
-	query := r.db.Preload("User", func(db *gorm.DB) *gorm.DB {
+	query := r.db.Model(&domain.AuditLog{}).
+		Joins("JOIN users ON users.id = audit_logs.user_id").
+		Joins("JOIN roles ON roles.id = users.role_id")
+
+	// Apply hierarchical filters based on requester role
+	switch requesterRole.Name {
+	case "SUPER_ADMIN":
+		// No filter, see everything
+	case "TAKMIR":
+		// Sees own, BENDAHARA, and SEKRETARIS
+		query = query.Where("roles.name IN ? OR audit_logs.user_id = ?", []string{"BENDAHARA", "SEKRETARIS"}, userID)
+	case "BENDAHARA", "SEKRETARIS":
+		// See each other and own
+		query = query.Where("roles.name IN ? OR audit_logs.user_id = ?", []string{"BENDAHARA", "SEKRETARIS"}, userID)
+	case "JAMAAH":
+		// Only see JAMAAH's activities
+		query = query.Where("roles.name = ?", "JAMAAH")
+	default:
+		// Default to own logs if role is unknown
+		query = query.Where("audit_logs.user_id = ?", userID)
+	}
+
+	// Count total records for pagination
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	query = query.Preload("User", func(db *gorm.DB) *gorm.DB {
 		return db.Select("id", "username")
 	}).
-		Select("id", "user_id", "action", "entity", "created_at").
-		Order("created_at DESC")
+		Select("audit_logs.id", "audit_logs.user_id", "audit_logs.action", "audit_logs.entity", "audit_logs.created_at").
+		Order("audit_logs.created_at DESC")
 	
 	if limit > 0 {
 		if page < 1 {

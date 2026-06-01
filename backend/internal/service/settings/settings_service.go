@@ -17,7 +17,7 @@ type SettingsService interface {
 	GetSMTPConfig() (*settings.SMTPConfigResponse, error)
 	TestSMTPConnection(req settings.TestSMTPRequest) error
 	GetSystemHealth() (*settings.HealthResponse, error)
-	GetAuditLogs(page, limit int) (*settings.AuditLogListResponse, error)
+	GetAuditLogs(page, limit int, userID uuid.UUID, roleID uint) (*settings.AuditLogListResponse, error)
 }
 
 type settingsService struct {
@@ -46,8 +46,8 @@ func (s *settingsService) GetSystemHealth() (*settings.HealthResponse, error) {
 	}, nil
 }
 
-func (s *settingsService) GetAuditLogs(page, limit int) (*settings.AuditLogListResponse, error) {
-	logs, total, err := s.repo.GetAuditLogs(page, limit)
+func (s *settingsService) GetAuditLogs(page, limit int, userID uuid.UUID, roleID uint) (*settings.AuditLogListResponse, error) {
+	logs, total, err := s.repo.GetAuditLogs(page, limit, userID, roleID)
 	if err != nil {
 		return nil, err
 	}

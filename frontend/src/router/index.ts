@@ -15,6 +15,11 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/forbidden',
+    name: 'Forbidden',
+    component: () => import('../components/pages/ForbiddenPage.vue'),
+  },
+  {
     path: '/',
     component: () => import('../components/templates/DashboardLayout.vue'),
     children: [
@@ -24,9 +29,46 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../components/pages/DashboardPage.vue'),
       },
       {
+        path: 'finance',
+        name: 'Finance',
+        component: () => import('../components/pages/FinancePage.vue'),
+        meta: { requiresRole: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS'] }
+      },
+      {
+        path: 'zakat',
+        name: 'Zakat',
+        component: () => import('../components/pages/ZakatPage.vue'),
+        meta: { requiresRole: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] }
+      },
+      {
+        path: 'jamaah',
+        name: 'Jamaah',
+        component: () => import('../components/pages/JamaahPage.vue'),
+        meta: { requiresRole: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS'] }
+      },
+      {
+        path: 'qurban',
+        name: 'Qurban',
+        component: () => import('../components/pages/QurbanPage.vue'),
+        meta: { requiresRole: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] }
+      },
+      {
+        path: 'inventory',
+        name: 'Inventory',
+        component: () => import('../components/pages/InventoryPage.vue'),
+        meta: { requiresRole: ['SUPER_ADMIN', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] }
+      },
+      {
+        path: 'logistics',
+        name: 'Logistics',
+        component: () => import('../components/pages/LogisticsPage.vue'),
+        meta: { requiresRole: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] }
+      },
+      {
         path: 'settings',
         name: 'Settings',
         component: () => import('../components/pages/SettingsPage.vue'),
+        meta: { requiresRole: ['SUPER_ADMIN', 'SEKRETARIS'] }
       },
       {
         path: 'users',
@@ -34,7 +76,6 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../components/pages/UsersPage.vue'),
         meta: { requiresRole: 'SUPER_ADMIN' }
       },
-      // Other protected routes will go here
     ],
     meta: { requiresAuth: true },
   },
@@ -64,6 +105,17 @@ router.beforeEach(async (to, _from, next) => {
   // 2. If trying to access ForceChangePassword but doesn't need it, redirect to home
   if (authStore.isAuthenticated && !authStore.requiresPasswordChange && to.name === 'ForceChangePassword') {
     return next({ name: 'Dashboard' });
+  }
+
+  // 3. RBAC Check
+  if (to.meta.requiresRole && authStore.isAuthenticated) {
+    const requiredRoles = Array.isArray(to.meta.requiresRole) 
+      ? to.meta.requiresRole 
+      : [to.meta.requiresRole];
+      
+    if (!requiredRoles.includes(authStore.userRole)) {
+      return next({ name: 'Forbidden' });
+    }
   }
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
