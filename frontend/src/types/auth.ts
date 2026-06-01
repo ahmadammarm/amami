@@ -4,11 +4,12 @@ export interface User {
   id: string;
   username: string;
   email: string;
+  full_name: string;
   role_name: UserRole;
-  status: 'ACTIVE' | 'SUSPENDED';
+  status: 'ACTIVE' | 'SUSPENDED' | 'PENDING_PASSWORD_CHANGE';
 }
 
 export interface LoginResponse {
   token: string;
-  user: User;
+  requires_password_change: boolean;
 }

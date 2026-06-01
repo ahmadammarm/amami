@@ -15,6 +15,7 @@ import (
 type AuthHandler interface {
 	Login(c *gin.Context)
 	GetMe(c *gin.Context)
+	ChangePassword(c *gin.Context)
 }
 
 type authHandler struct {
@@ -45,6 +46,25 @@ func (h *authHandler) Login(c *gin.Context) {
 
 	logger.Info("Login successful", zap.String("email", req.Email))
 	utils.SuccessResponse(c, "Login successful", res)
+}
+
+func (h *authHandler) ChangePassword(c *gin.Context) {
+	userIDVal, _ := c.Get("user_id")
+	userID := userIDVal.(uuid.UUID)
+
+	var req auth.ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.ValidationErrorResponse(c, err)
+		return
+	}
+
+	res, err := h.authService.ChangePassword(userID, req)
+	if err != nil {
+		utils.ErrorResponse(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	utils.SuccessResponse(c, "Password changed successfully", res)
 }
 
 func (h *authHandler) GetMe(c *gin.Context) {

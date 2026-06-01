@@ -32,13 +32,17 @@ const onSubmit = handleSubmit(async (values) => {
   isLoading.value = true;
   try {
     const response = await apiClient.post('/auth/login', values);
-    const { token } = response.data.data;
+    const { token, requires_password_change } = response.data.data;
     
-    authStore.setToken(token);
-    await authStore.fetchUser();
+    authStore.setToken(token, requires_password_change);
     
-    // Redirect immediately to dashboard with success query param
-    router.push({ path: '/', query: { loginSuccess: 'true' } });
+    if (requires_password_change) {
+      router.push({ name: 'ForceChangePassword' });
+    } else {
+      await authStore.fetchUser();
+      // Redirect immediately to dashboard with success query param
+      router.push({ path: '/', query: { loginSuccess: 'true' } });
+    }
   } catch (error) {
     let message = 'Invalid email or password';
     if (axios.isAxiosError(error)) {

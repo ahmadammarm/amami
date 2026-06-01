@@ -10,6 +10,7 @@ type UserRepository interface {
 	FindByID(id uuid.UUID) (*domain.User, error)
 	FindByUsernameOrEmail(identifier string) (*domain.User, error)
 	Create(user *domain.User) error
+	Update(user *domain.User) error
 	CreateAuditLog(log domain.AuditLog) error
 }
 
@@ -52,6 +53,10 @@ func (r *userRepository) FindByUsernameOrEmail(identifier string) (*domain.User,
 
 func (r *userRepository) Create(user *domain.User) error {
 	return r.db.Create(user).Error
+}
+
+func (r *userRepository) Update(user *domain.User) error {
+	return r.db.Save(user).Error
 }
 
 func (r *userRepository) CreateAuditLog(log domain.AuditLog) error {

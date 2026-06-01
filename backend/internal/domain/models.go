@@ -35,7 +35,7 @@ type User struct {
 	PasswordHash string     `gorm:"type:text;not null"`
 	RoleID       uint       `gorm:"index"`
 	Role         Role       `gorm:"constraint:OnDelete:RESTRICT;"`
-	Status       string     `gorm:"type:varchar(20);default:'ACTIVE'"`
+	Status       string     `gorm:"size:50;default:'ACTIVE'"`
 	LastLoginAt  *time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
@@ -133,7 +133,7 @@ type QurbanBooking struct {
 	PackageID     uint           `gorm:"index;not null"`
 	Package       QurbanPackage  `gorm:"constraint:OnDelete:RESTRICT;"`
 	BookingDate   time.Time      `gorm:"default:now()"`
-	PaymentStatus string         `gorm:"type:varchar(20)"`
+	PaymentStatus string         `gorm:"type:varchar(30)"`
 	TotalAmount   int64          `gorm:"type:bigint"`
 	Metadata      datatypes.JSON `gorm:"type:jsonb"`
 }
@@ -143,7 +143,7 @@ type QurbanAnimal struct {
 	TagNumber  string    `gorm:"type:varchar(50);uniqueIndex;not null"`
 	Type       string    `gorm:"type:varchar(20)"`
 	Weight     float64   `gorm:"type:decimal(6,2)"`
-	Status     string    `gorm:"type:varchar(20);index"`
+	Status     string    `gorm:"type:varchar(30);index"`
 	VendorInfo string    `gorm:"type:text"`
 }
 
@@ -155,7 +155,7 @@ type Asset struct {
 	SKU           string     `gorm:"type:varchar(50);uniqueIndex"`
 	PurchaseDate  *time.Time
 	PurchasePrice int64      `gorm:"type:bigint"`
-	CurrentStatus string     `gorm:"type:varchar(20)"`
+	CurrentStatus string     `gorm:"type:varchar(30)"`
 	Location      string     `gorm:"type:varchar(100)"`
 }
 
@@ -199,7 +199,7 @@ type Agenda struct {
 	StartTime   time.Time  `gorm:"not null;index"`
 	EndTime     time.Time  `gorm:"not null"`
 	Location    string     `gorm:"type:varchar(100)"`
-	Status      string     `gorm:"type:varchar(20);index"`
+	Status      string     `gorm:"type:varchar(30);index"`
 	CreatedByID *uuid.UUID `gorm:"type:uuid"`
 	Creator     *User      `gorm:"foreignKey:CreatedByID;constraint:OnDelete:SET NULL;"`
 }

@@ -9,6 +9,12 @@ const routes: RouteRecordRaw[] = [
     meta: { guest: true },
   },
   {
+    path: '/force-change-password',
+    name: 'ForceChangePassword',
+    component: () => import('../components/pages/ForceChangePasswordPage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/',
     component: () => import('../components/templates/DashboardLayout.vue'),
     children: [
@@ -21,6 +27,12 @@ const routes: RouteRecordRaw[] = [
         path: 'settings',
         name: 'Settings',
         component: () => import('../components/pages/SettingsPage.vue'),
+      },
+      {
+        path: 'users',
+        name: 'Users',
+        component: () => import('../components/pages/UsersPage.vue'),
+        meta: { requiresRole: 'SUPER_ADMIN' }
       },
       // Other protected routes will go here
     ],
@@ -42,6 +54,16 @@ router.beforeEach(async (to, _from, next) => {
     } catch (e) {
       return next({ name: 'Login' });
     }
+  }
+
+  // 1. If authenticated but needs password change, force them to that page
+  if (authStore.isAuthenticated && authStore.requiresPasswordChange && to.name !== 'ForceChangePassword') {
+    return next({ name: 'ForceChangePassword' });
+  }
+
+  // 2. If trying to access ForceChangePassword but doesn't need it, redirect to home
+  if (authStore.isAuthenticated && !authStore.requiresPasswordChange && to.name === 'ForceChangePassword') {
+    return next({ name: 'Dashboard' });
   }
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {

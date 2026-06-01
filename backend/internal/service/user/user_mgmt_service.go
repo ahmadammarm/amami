@@ -40,13 +40,7 @@ func (s *userMgmtService) InviteUser(req user.InviteUserRequest) (*user.UserResp
 		return nil, "", errors.New("invalid role id")
 	}
 
-	// 2. Generate random password
-	tempPassword, err := generateRandomPassword(12)
-	if err != nil {
-		return nil, "", errors.New("failed to generate temporary password")
-	}
-
-	hashedPassword, err := utils.HashPassword(tempPassword)
+	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
 		return nil, "", errors.New("failed to hash password")
 	}
@@ -57,7 +51,7 @@ func (s *userMgmtService) InviteUser(req user.InviteUserRequest) (*user.UserResp
 		Email:        req.Email,
 		PasswordHash: hashedPassword,
 		RoleID:       req.RoleID,
-		Status:       "ACTIVE",
+		Status:       "PENDING_PASSWORD_CHANGE",
 	}
 
 	jamaah := &domain.Jamaah{
@@ -72,7 +66,6 @@ func (s *userMgmtService) InviteUser(req user.InviteUserRequest) (*user.UserResp
 
 	logger.Info("User invited successfully", 
 		zap.String("username", userModel.Username), 
-		zap.String("temp_password", tempPassword), // Log it until SMTP is implemented
 	)
 
 	return &user.UserResponse{
@@ -82,7 +75,7 @@ func (s *userMgmtService) InviteUser(req user.InviteUserRequest) (*user.UserResp
 		FullName: jamaah.FullName,
 		RoleName: role.Name,
 		Status:   userModel.Status,
-	}, tempPassword, nil
+	}, req.Password, nil
 }
 
 func (s *userMgmtService) GetAllUsers() ([]user.UserResponse, error) {

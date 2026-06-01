@@ -11,6 +11,7 @@ import (
 	"github.com/ahmadammarm/amami/backend/internal/di"
 	"github.com/ahmadammarm/amami/backend/internal/middleware"
 	"github.com/ahmadammarm/amami/backend/pkg/logger"
+	"github.com/ahmadammarm/amami/backend/pkg/utils"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
@@ -61,10 +62,11 @@ func main() {
 		{
 			auth.POST("/login", middleware.RateLimit(5, time.Minute), config.AuthHandler.Login)
 			auth.GET("/me", middleware.RequireAuth(), config.AuthHandler.GetMe)
+			auth.POST("/change-password", middleware.RequireAuth(), config.AuthHandler.ChangePassword)
 		}
 
 		// User Management Module (Protected)
-		users := v1.Group("/users", middleware.RequireAuth())
+		users := v1.Group("/users", middleware.RequireAuth(), middleware.RejectScope(utils.ScopePasswordReset))
 		{
 			users.POST("/invite", middleware.RequirePermission(config.RoleRepo, "user:manage"), config.UserHandler.Handler.InviteUser)
 			users.GET("", middleware.RequirePermission(config.RoleRepo, "user:manage"), config.UserHandler.Handler.GetAllUsers)
@@ -77,7 +79,7 @@ func main() {
 			settings.GET("/profile", config.SettingsHandler.Handler.GetMosqueProfile)
 			
 			// Protected settings
-			protected := settings.Group("", middleware.RequireAuth())
+			protected := settings.Group("", middleware.RequireAuth(), middleware.RejectScope(utils.ScopePasswordReset))
 			{
 				protected.PUT("/profile", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.UpdateMosqueProfile)
 				protected.GET("/smtp", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.GetSMTPConfig)

@@ -14,6 +14,7 @@ import (
 type AuthService interface {
 	Login(req auth.LoginRequest) (*auth.LoginResponse, error)
 	GetMe(userID uuid.UUID) (*user.UserResponse, error)
+	ChangePassword(userID uuid.UUID, req auth.ChangePasswordRequest) (*auth.LoginResponse, error)
 }
 
 type authService struct {
@@ -30,7 +31,7 @@ func (s *authService) Login(req auth.LoginRequest) (*auth.LoginResponse, error) 
 		return nil, errors.New("invalid credentials")
 	}
 
-	if user.Status != "ACTIVE" {
+	if user.Status != "ACTIVE" && user.Status != "PENDING_PASSWORD_CHANGE" {
 		return nil, errors.New("account is suspended or inactive")
 	}
 
@@ -38,7 +39,14 @@ func (s *authService) Login(req auth.LoginRequest) (*auth.LoginResponse, error) 
 		return nil, errors.New("invalid credentials")
 	}
 
-	token, err := utils.GenerateToken(user.ID, user.RoleID)
+	scope := utils.ScopeFullAccess
+	requiresChange := false
+	if user.Status == "PENDING_PASSWORD_CHANGE" {
+		scope = utils.ScopePasswordReset
+		requiresChange = true
+	}
+
+	token, err := utils.GenerateToken(user.ID, user.RoleID, scope)
 	if err != nil {
 		return nil, errors.New("failed to generate token")
 	}
@@ -50,7 +58,45 @@ func (s *authService) Login(req auth.LoginRequest) (*auth.LoginResponse, error) 
 		Entity: "User Session",
 	})
 
-	return &auth.LoginResponse{Token: token}, nil
+	return &auth.LoginResponse{
+		Token:                  token,
+		RequiresPasswordChange: requiresChange,
+	}, nil
+}
+
+func (s *authService) ChangePassword(userID uuid.UUID, req auth.ChangePasswordRequest) (*auth.LoginResponse, error) {
+	u, err := s.userRepo.FindByID(userID)
+	if err != nil {
+		return nil, errors.New("user not found")
+	}
+
+	hashedPassword, err := utils.HashPassword(req.NewPassword)
+	if err != nil {
+		return nil, errors.New("failed to hash password")
+	}
+
+	u.PasswordHash = hashedPassword
+	u.Status = "ACTIVE"
+
+	if err := s.userRepo.Update(u); err != nil {
+		return nil, errors.New("failed to update user")
+	}
+
+	token, err := utils.GenerateToken(u.ID, u.RoleID, utils.ScopeFullAccess)
+	if err != nil {
+		return nil, errors.New("failed to generate token")
+	}
+
+	s.userRepo.CreateAuditLog(domain.AuditLog{
+		UserID: u.ID,
+		Action: "PASSWORD_CHANGE",
+		Entity: "User Account",
+	})
+
+	return &auth.LoginResponse{
+		Token:                  token,
+		RequiresPasswordChange: false,
+	}, nil
 }
 
 func (s *authService) GetMe(userID uuid.UUID) (*user.UserResponse, error) {

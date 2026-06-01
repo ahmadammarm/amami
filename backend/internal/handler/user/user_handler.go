@@ -62,9 +62,7 @@ func (h *userMgmtHandler) UpdateUserStatus(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		Status string `json:"status" binding:"required"`
-	}
+	var req user.UpdateStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.ValidationErrorResponse(c, err)
 		return

@@ -17,18 +17,25 @@ func getJWTSecret() []byte {
 	return []byte(secret)
 }
 
+const (
+	ScopeFullAccess    = "full_access"
+	ScopePasswordReset = "password_reset"
+)
+
 type Claims struct {
 	UserID uuid.UUID `json:"user_id"`
 	RoleID uint      `json:"role_id"`
+	Scope  string    `json:"scope"`
 	jwt.RegisteredClaims
 }
 
 // GenerateToken creates a new JWT token for a user
-func GenerateToken(userID uuid.UUID, roleID uint) (string, error) {
+func GenerateToken(userID uuid.UUID, roleID uint, scope string) (string, error) {
 	expirationTime := time.Now().Add(24 * time.Hour)
 	claims := &Claims{
 		UserID: userID,
 		RoleID: roleID,
+		Scope:  scope,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
