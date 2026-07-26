@@ -11,7 +11,7 @@
     * [3.5 Kurban & Operational Lifecycle](#35-kurban--operational-lifecycle)
     * [3.6 Inventory Management](#36-inventory-management)
     * [3.7 System & Utility Module](#37-system--utility-module)
-    * [3.8 Logistics & Event Module](#38-logistics--event-module)
+    * [3.8 Agenda & Inventory Module](#38-agenda--inventory-module)
 4. [Relationship & Referential Integrity](#4-relationship--referential-integrity)
 5. [Security & Auditing Protocols](#5-security--auditing-protocols)
 6. [Query Optimization & Performance](#6-query-optimization--performance)
@@ -269,7 +269,7 @@ This module handles global settings and internal communication for the Takmir.
 
 ---
 
-### 3.8 Logistics & Event Module
+### 3.8 Agenda & Inventory Module
 This module handles the scheduling and documentation of mosque activities.
 
 #### `agendas`

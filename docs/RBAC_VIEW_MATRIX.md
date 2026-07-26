@@ -53,7 +53,7 @@ This document defines the relationship between backend permissions and frontend 
 | | Animal Inventory | Read | Hidden | Full | Read | Read |
 | **Inventory** | Asset Registry | Read | Hidden | Full | Read | Read |
 | | Loan Management | Read | Hidden | Full | Full | Personal |
-| **Logistics** | Agenda / Calendar | Full | Read | Full | Full | Read |
+| **Agenda** | Agenda / Calendar | Full | Read | Full | Full | Read |
 | | Activity Documentation | Full | Read | Full | Full | Read |
 | **Settings** | Mosque Profile | Full | Hidden | Hidden | Full | Read |
 | | SMTP/System Config | Full | Hidden | Hidden | Hidden | Hidden |

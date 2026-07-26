@@ -16,6 +16,7 @@ The project is structured as a monorepo, divided into a Go backend and a Vue 3 f
 - **Immutable Financial Ledger:** Financial records follow a strict "No Update / No Delete" rule. Corrections require explicit "Reversal Entries" to maintain absolute financial integrity and transparency.
 - **Zakat Management:** Full tracking of Zakat Fitrah and Zakat Maal collection and distribution, with atomic ledger integration for cash donations.
 - **Jamaah Database:** Community management system with dynamic tagging (e.g., Mustahik, Donatur).
+- **Agenda & Inventory Management:** Comprehensive tracking of mosque events, activities, physical assets, and item loans.
 - **Interactive Dashboards:** Role-specific dynamic dashboards that display aggregated metrics for finance, zakat, jamaah, and more.
 
 ## Development Setup

@@ -107,7 +107,7 @@ The **amami** platform is an Enterprise Resource Planning (ERP) system designed 
 
 ---
 
-## 6. Logistics & Communication Module
+## 6. Agenda & Inventory Module
 
 ### 6.1 Manajemen Agenda & Kegiatan
 **Objective**: To centralize the mosque’s calendar of spiritual and social events.
