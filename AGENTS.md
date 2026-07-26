@@ -28,7 +28,7 @@ The project is structured as a monorepo, divided into a Go backend and a Vue 3 f
 
 ### Documentation (`/docs`)
 Contains authoritative project documentation, including:
-- `FEATURE_SPECIFICATIONS.md`: Detailed functional specs for all modules (Auth, Ledger, Zakat, Qurban, Inventory, etc.).
+- `FEATURE_SPECIFICATIONS.md`: Detailed functional specs for all modules (Auth, Ledger, Zakat, Qurban, Inventory, Agenda, etc.).
 - `RBAC_VIEW_MATRIX.md`: Defines role permissions (SUPER_ADMIN, BENDAHARA, TAKMIR, SEKRETARIS, JAMAAH) and their corresponding frontend visibility.
 - `DATABASE_DOCUMENTATION.md`: Database schema and constraints.
 - `ROADMAP.md`: Project vision and development milestones.
