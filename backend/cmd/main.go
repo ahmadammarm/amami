@@ -131,24 +131,28 @@ func main() {
 			dashboard.GET("/metrics", config.DashboardHandler.Handler.GetMetrics)
 		}
 
-		// Logistics & Inventory Routes
-		logisticsRoutes := v1.Group("/logistics", middleware.RequireAuth())
-		logisticsRoutes.Use(middleware.RequirePermission(config.RoleRepo, "inventory:manage"))
+		// Inventory Routes
+		inventoryRoutes := v1.Group("/inventory", middleware.RequireAuth())
+		inventoryRoutes.Use(middleware.RequirePermission(config.RoleRepo, "inventory:manage"))
 		{
 			// Assets
-			logisticsRoutes.GET("", config.LogisticsHandler.Handler.GetAllAssets)
-			logisticsRoutes.POST("/assets", config.LogisticsHandler.Handler.CreateAsset)
-			logisticsRoutes.PUT("/assets/:id", config.LogisticsHandler.Handler.UpdateAsset)
-			logisticsRoutes.DELETE("/assets/:id", config.LogisticsHandler.Handler.DeleteAsset)
+			inventoryRoutes.GET("/assets", config.InventoryHandler.Handler.GetAllAssets)
+			inventoryRoutes.POST("/assets", config.InventoryHandler.Handler.CreateAsset)
+			inventoryRoutes.PUT("/assets/:id", config.InventoryHandler.Handler.UpdateAsset)
+			inventoryRoutes.DELETE("/assets/:id", config.InventoryHandler.Handler.DeleteAsset)
 
 			// Loans
-			logisticsRoutes.POST("/assets/:id/loans", config.LogisticsHandler.Handler.CreateLoan)
-			logisticsRoutes.PUT("/assets/loans/:loanId/return", config.LogisticsHandler.Handler.ReturnLoan)
+			inventoryRoutes.POST("/assets/:id/loans", config.InventoryHandler.Handler.CreateLoan)
+			inventoryRoutes.PUT("/assets/loans/:loanId/return", config.InventoryHandler.Handler.ReturnLoan)
+		}
 
-			// Agenda
-			logisticsRoutes.GET("/agenda", config.LogisticsHandler.Handler.GetAgendas)
-			logisticsRoutes.POST("/agenda", config.LogisticsHandler.Handler.CreateAgenda)
-			logisticsRoutes.PUT("/agenda/:id", config.LogisticsHandler.Handler.UpdateAgenda)
+		// Agenda Routes
+		agendaRoutes := v1.Group("/agenda", middleware.RequireAuth())
+		agendaRoutes.Use(middleware.RequirePermission(config.RoleRepo, "inventory:manage"))
+		{
+			agendaRoutes.GET("", config.AgendaHandler.Handler.GetAgendas)
+			agendaRoutes.POST("", config.AgendaHandler.Handler.CreateAgenda)
+			agendaRoutes.PUT("/:id", config.AgendaHandler.Handler.UpdateAgenda)
 		}
 
 		// Jamaah Module

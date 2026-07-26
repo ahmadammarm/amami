@@ -4,7 +4,7 @@ export interface Asset {
   sku: string;
   purchase_date: string | null;
   purchase_price: number;
-  current_status: 'GOOD' | 'REPAIR' | 'BROKEN';
+  current_status: 'GOOD' | 'LOANED' | 'REPAIR' | 'NEEDS_REPAIR' | 'BROKEN';
   location: string;
 }
 
@@ -13,7 +13,7 @@ export interface CreateAssetPayload {
   sku: string;
   purchase_date: string | null;
   purchase_price: number;
-  current_status: 'GOOD' | 'REPAIR' | 'BROKEN';
+  current_status: 'GOOD' | 'LOANED' | 'REPAIR' | 'NEEDS_REPAIR' | 'BROKEN';
   location: string;
 }
 
@@ -37,24 +37,4 @@ export interface CreateAssetLoanPayload {
 export interface ReturnAssetLoanPayload {
   return_date: string;
   condition_notes: string;
-}
-
-export interface Agenda {
-  id: string;
-  title: string;
-  description: string;
-  start_time: string;
-  end_time: string;
-  location: string;
-  status: 'SCHEDULED' | 'ONGOING' | 'COMPLETED' | 'CANCELLED';
-  created_by_id: string | null;
-}
-
-export interface CreateAgendaPayload {
-  title: string;
-  description: string;
-  start_time: string;
-  end_time: string;
-  location: string;
-  status: 'SCHEDULED' | 'ONGOING' | 'COMPLETED' | 'CANCELLED';
 }

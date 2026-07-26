@@ -222,15 +222,13 @@ const formatCurrency = (amount: number) => {
           <div class="p-6 space-y-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Muzakki (Donatur)</label>
-              <AsyncJamaahSelect v-model="collectForm.muzakki_id" placeholder="Cari Muzakki (Donatur)..." />
+              <AsyncJamaahSelect v-model="collectForm.muzakki_id" :muzakki-only="true" placeholder="Cari Muzakki (Donatur)..." />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Jenis Zakat</label>
               <select v-model="collectForm.zakat_type" required class="block w-full rounded-lg border-gray-300 p-2.5 border">
-                <option value="FITRAH_UANG">Zakat Fitrah (Uang)</option>
                 <option value="FITRAH_BERAS">Zakat Fitrah (Beras)</option>
                 <option value="MAAL">Zakat Maal</option>
-                <option value="PROFESI">Zakat Profesi</option>
                 <option value="INFAQ">Infaq / Sedekah</option>
               </select>
             </div>

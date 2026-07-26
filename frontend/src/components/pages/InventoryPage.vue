@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
-import { logisticsService } from '../../api/services/logistics';
-import type { CreateAssetPayload, Asset } from '../../types/logistics';
-import { PlusIcon, XIcon, TrashIcon, BoxIcon, EditIcon } from 'lucide-vue-next';
+import { inventoryService } from '../../api/services/inventory';
+import type { CreateAssetPayload, Asset } from '../../types/inventory';
+import { PlusIcon, XIcon, TrashIcon, BoxIcon, EditIcon, CheckCircleIcon, WrenchIcon, AlertTriangleIcon, ActivityIcon, RepeatIcon } from 'lucide-vue-next';
 import { toast } from 'vue-sonner';
 
 const queryClient = useQueryClient();
@@ -22,11 +22,17 @@ const form = ref<CreateAssetPayload>({
 
 const { data: assets, isLoading } = useQuery({
   queryKey: ['assets'],
-  queryFn: () => logisticsService.getAssets(1, 100)
+  queryFn: () => inventoryService.getAssets(1, 100)
 });
 
+const totalAssets = computed(() => assets.value?.total || 0);
+const goodAssets = computed(() => assets.value?.items?.filter(a => a.current_status === 'GOOD').length || 0);
+const loanedAssets = computed(() => assets.value?.items?.filter(a => a.current_status === 'LOANED').length || 0);
+const repairAssets = computed(() => assets.value?.items?.filter(a => a.current_status === 'REPAIR' || a.current_status === 'NEEDS_REPAIR').length || 0);
+const brokenAssets = computed(() => assets.value?.items?.filter(a => a.current_status === 'BROKEN').length || 0);
+
 const createMutation = useMutation({
-  mutationFn: logisticsService.createAsset,
+  mutationFn: inventoryService.createAsset,
   onSuccess: () => {
     toast.success('Aset berhasil ditambahkan');
     queryClient.invalidateQueries({ queryKey: ['assets'] });
@@ -36,7 +42,7 @@ const createMutation = useMutation({
 });
 
 const updateMutation = useMutation({
-  mutationFn: ({ id, payload }: { id: string, payload: CreateAssetPayload }) => logisticsService.updateAsset(id, payload),
+  mutationFn: ({ id, payload }: { id: string, payload: CreateAssetPayload }) => inventoryService.updateAsset(id, payload),
   onSuccess: () => {
     toast.success('Aset berhasil diperbarui');
     queryClient.invalidateQueries({ queryKey: ['assets'] });
@@ -46,7 +52,7 @@ const updateMutation = useMutation({
 });
 
 const deleteMutation = useMutation({
-  mutationFn: logisticsService.deleteAsset,
+  mutationFn: inventoryService.deleteAsset,
   onSuccess: () => {
     toast.success('Aset berhasil dihapus');
     queryClient.invalidateQueries({ queryKey: ['assets'] });
@@ -88,7 +94,7 @@ const formatCurrency = (amount: number) => {
 
 <template>
   <div class="space-y-6">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
       <div>
         <h2 class="text-2xl font-bold text-gray-900">Inventaris & Aset</h2>
         <p class="mt-1 text-sm text-gray-500">Kelola daftar aset masjid dan peminjaman</p>
@@ -97,6 +103,65 @@ const formatCurrency = (amount: number) => {
         <PlusIcon class="w-5 h-5" />
         Tambah Aset
       </button>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div class="flex items-center gap-4">
+          <div class="p-3 bg-blue-50 text-blue-600 rounded-xl">
+            <BoxIcon class="w-6 h-6" />
+          </div>
+          <div>
+            <p class="text-sm font-medium text-gray-500">Total Aset</p>
+            <p class="text-2xl font-bold text-gray-900">{{ totalAssets }}</p>
+          </div>
+        </div>
+      </div>
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div class="flex items-center gap-4">
+          <div class="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+            <CheckCircleIcon class="w-6 h-6" />
+          </div>
+          <div>
+            <p class="text-sm font-medium text-gray-500">Kondisi Baik</p>
+            <p class="text-2xl font-bold text-gray-900">{{ goodAssets }}</p>
+          </div>
+        </div>
+      </div>
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div class="flex items-center gap-4">
+          <div class="p-3 bg-purple-50 text-purple-600 rounded-xl">
+            <RepeatIcon class="w-6 h-6" />
+          </div>
+          <div>
+            <p class="text-sm font-medium text-gray-500">Dipinjam</p>
+            <p class="text-2xl font-bold text-gray-900">{{ loanedAssets }}</p>
+          </div>
+        </div>
+      </div>
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div class="flex items-center gap-4">
+          <div class="p-3 bg-amber-50 text-amber-600 rounded-xl">
+            <WrenchIcon class="w-6 h-6" />
+          </div>
+          <div>
+            <p class="text-sm font-medium text-gray-500">Perlu Perbaikan</p>
+            <p class="text-2xl font-bold text-gray-900">{{ repairAssets }}</p>
+          </div>
+        </div>
+      </div>
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div class="flex items-center gap-4">
+          <div class="p-3 bg-red-50 text-red-600 rounded-xl">
+            <AlertTriangleIcon class="w-6 h-6" />
+          </div>
+          <div>
+            <p class="text-sm font-medium text-gray-500">Rusak</p>
+            <p class="text-2xl font-bold text-gray-900">{{ brokenAssets }}</p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Asset List -->
@@ -135,9 +200,11 @@ const formatCurrency = (amount: number) => {
                 <span :class="[
                   'px-2.5 py-1 text-xs font-medium rounded-full',
                   asset.current_status === 'GOOD' ? 'bg-emerald-50 text-emerald-700' : 
-                  asset.current_status === 'REPAIR' ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'
+                  asset.current_status === 'LOANED' ? 'bg-purple-50 text-purple-700' :
+                  (asset.current_status === 'REPAIR' || asset.current_status === 'NEEDS_REPAIR') ? 'bg-amber-50 text-amber-700' : 
+                  'bg-red-50 text-red-700'
                 ]">
-                  {{ asset.current_status }}
+                  {{ asset.current_status === 'NEEDS_REPAIR' ? 'NEEDS REPAIR' : asset.current_status }}
                 </span>
               </td>
               <td class="px-6 py-4 text-gray-600">{{ formatCurrency(asset.purchase_price) }}</td>
@@ -181,9 +248,11 @@ const formatCurrency = (amount: number) => {
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
               <select v-model="form.current_status" class="block w-full rounded-lg border-gray-300 p-2.5 border">
-                <option value="GOOD">Baik</option>
-                <option value="REPAIR">Perbaikan</option>
-                <option value="BROKEN">Rusak</option>
+                <option value="GOOD">Baik (Tersedia)</option>
+                <option value="LOANED">Dipinjam</option>
+                <option value="NEEDS_REPAIR">Perlu Perbaikan</option>
+                <option value="REPAIR">Sedang Diperbaiki</option>
+                <option value="BROKEN">Rusak Total</option>
               </select>
             </div>
           </div>

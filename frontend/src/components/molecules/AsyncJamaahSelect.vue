@@ -23,6 +23,7 @@ const props = defineProps<{
   modelValue: string;
   placeholder?: string;
   mustahikOnly?: boolean;
+  muzakkiOnly?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -47,8 +48,13 @@ const { data: searchResults, isLoading } = useQuery({
   queryFn: async () => {
     // Only search if there's a query or just load the first 20
     const query = debouncedSearch.value ? `&search=${encodeURIComponent(debouncedSearch.value)}` : '';
-    const mustahikParam = props.mustahikOnly ? '&is_mustahik=true' : '';
-    const response = await apiClient.get(`/jamaah?page=1&limit=20${query}${mustahikParam}`);
+    let filterParam = '';
+    if (props.mustahikOnly) {
+      filterParam = '&is_mustahik=true';
+    } else if (props.muzakkiOnly) {
+      filterParam = '&is_mustahik=false';
+    }
+    const response = await apiClient.get(`/jamaah?page=1&limit=20${query}${filterParam}`);
     // Handle both old and new response shapes for safety
     const data = response.data.data;
     return data.items || data || [];

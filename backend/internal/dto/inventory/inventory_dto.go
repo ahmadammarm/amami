@@ -1,4 +1,4 @@
-package logistics
+package inventory
 
 import (
 	"time"
@@ -20,7 +20,7 @@ type CreateAssetRequest struct {
 	SKU           string     `json:"sku" binding:"required"`
 	PurchaseDate  *time.Time `json:"purchase_date"`
 	PurchasePrice int64      `json:"purchase_price"`
-	CurrentStatus string     `json:"current_status" binding:"required"` // GOOD, REPAIR, BROKEN
+	CurrentStatus string     `json:"current_status" binding:"required"` // GOOD, REPAIR, BROKEN, LOANED, NEEDS_REPAIR
 	Location      string     `json:"location"`
 }
 
@@ -34,24 +34,4 @@ type CreateAssetLoanRequest struct {
 type ReturnAssetLoanRequest struct {
 	ReturnDate     time.Time `json:"return_date" binding:"required"`
 	ConditionNotes string    `json:"condition_notes"`
-}
-
-type AgendaResponse struct {
-	ID          uuid.UUID  `json:"id"`
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	StartTime   time.Time  `json:"start_time"`
-	EndTime     time.Time  `json:"end_time"`
-	Location    string     `json:"location"`
-	Status      string     `json:"status"`
-	CreatedByID *uuid.UUID `json:"created_by_id"`
-}
-
-type CreateAgendaRequest struct {
-	Title       string    `json:"title" binding:"required"`
-	Description string    `json:"description"`
-	StartTime   time.Time `json:"start_time" binding:"required"`
-	EndTime     time.Time `json:"end_time" binding:"required"`
-	Location    string    `json:"location"`
-	Status      string    `json:"status" binding:"required"` // SCHEDULED, ONGOING, COMPLETED, CANCELLED
 }

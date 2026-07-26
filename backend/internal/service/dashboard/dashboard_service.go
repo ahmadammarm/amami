@@ -68,9 +68,24 @@ func (s *dashboardService) GetMetrics() (*dashboard.DashboardMetricsResponse, er
 		dbStatus = "Down"
 	}
 	metrics.System = dashboard.SystemMetrics{
-		Uptime:         "99.9%", // Simulated
+		Uptime:         "99.9%",
 		DBStatus:       dbStatus,
-		ActiveSessions: 1, // Simulated
+		ActiveSessions: 1,
+	}
+
+	// Analytics (Chart Data)
+	monthlyFinance, _ := s.repo.GetMonthlyFinanceTrend(6)
+	assetBreakdown, _ := s.repo.GetAssetStatusBreakdown()
+	qurbanBreakdown, _ := s.repo.GetQurbanTypeBreakdown()
+	jamaahGrowth, _ := s.repo.GetMonthlyJamaahGrowth(6)
+	zakatBreakdown, _ := s.repo.GetZakatDonationVsDistribution()
+
+	metrics.Analytics = dashboard.AnalyticsMetrics{
+		MonthlyFinance:  monthlyFinance,
+		AssetBreakdown:  assetBreakdown,
+		QurbanBreakdown: qurbanBreakdown,
+		JamaahGrowth:    jamaahGrowth,
+		ZakatBreakdown:  zakatBreakdown,
 	}
 
 	return &metrics, nil

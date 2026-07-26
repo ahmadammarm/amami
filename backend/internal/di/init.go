@@ -7,11 +7,12 @@ import (
 	dashboardModule "github.com/ahmadammarm/amami/backend/internal/di/dashboard"
 	financeModule "github.com/ahmadammarm/amami/backend/internal/di/finance"
 	jamaahModule "github.com/ahmadammarm/amami/backend/internal/di/jamaah"
-	logisticsModule "github.com/ahmadammarm/amami/backend/internal/di/logistics"
-	qurbanModule "github.com/ahmadammarm/amami/backend/internal/di/qurban"
 	settingsModule "github.com/ahmadammarm/amami/backend/internal/di/settings"
 	userModule "github.com/ahmadammarm/amami/backend/internal/di/user"
 	zakatModule "github.com/ahmadammarm/amami/backend/internal/di/zakat"
+	agendaModule "github.com/ahmadammarm/amami/backend/internal/di/agenda"
+	inventoryModule "github.com/ahmadammarm/amami/backend/internal/di/inventory"
+	qurbanModule "github.com/ahmadammarm/amami/backend/internal/di/qurban"
 	"github.com/ahmadammarm/amami/backend/pkg/config"
 	"github.com/ahmadammarm/amami/backend/pkg/database"
 	"gorm.io/gorm"
@@ -25,7 +26,8 @@ type Config struct {
 	DashboardHandler dashboardModule.Module
 	JamaahHandler    jamaahModule.Module
 	ZakatHandler     zakatModule.Module
-	LogisticsHandler logisticsModule.Module
+	AgendaHandler    agendaModule.Module
+	InventoryHandler inventoryModule.Module
 	QurbanHandler    qurbanModule.Module
 	RoleRepo         authRepo.RoleRepository
 	DB               *gorm.DB
@@ -62,8 +64,11 @@ func Initialize() (*Config, error) {
 	// Zakat Module
 	zakatMod := zakatModule.NewModule(db)
 
-	// Logistics Module
-	logisticsMod := logisticsModule.NewModule(db)
+	// Agenda Module
+	agendaMod := agendaModule.NewModule(db)
+
+	// Inventory Module
+	inventoryMod := inventoryModule.NewModule(db)
 
 	// Qurban Module
 	qurbanMod := qurbanModule.NewModule(db)
@@ -76,7 +81,8 @@ func Initialize() (*Config, error) {
 		DashboardHandler: *dashboardMod,
 		JamaahHandler:    *jamaahMod,
 		ZakatHandler:     *zakatMod,
-		LogisticsHandler: *logisticsMod,
+		AgendaHandler:    *agendaMod,
+		InventoryHandler: *inventoryMod,
 		QurbanHandler:    *qurbanMod,
 		RoleRepo:         roleRepo,
 		DB:               db,

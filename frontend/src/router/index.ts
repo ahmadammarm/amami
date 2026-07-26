@@ -59,9 +59,9 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresRole: ['SUPER_ADMIN', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] }
       },
       {
-        path: 'logistics',
-        name: 'Logistics',
-        component: () => import('../components/pages/LogisticsPage.vue'),
+        path: 'agenda',
+        name: 'Agenda',
+        component: () => import('../components/pages/AgendaPage.vue'),
         meta: { requiresRole: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] }
       },
       {

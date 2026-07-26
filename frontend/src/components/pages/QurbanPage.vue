@@ -143,7 +143,7 @@
                 <tr v-if="isLoadingBookings">
                   <td colspan="5" class="px-6 py-8 text-center text-gray-500">Memuat data...</td>
                 </tr>
-                <tr v-else-if="bookings?.length === 0">
+                <tr v-else-if="!bookings?.length">
                   <td colspan="5" class="px-6 py-8 text-center text-gray-500">Belum ada pendaftaran qurban.</td>
                 </tr>
                 <tr v-else v-for="b in bookings" :key="b.id" class="hover:bg-gray-50 transition-colors">
@@ -182,7 +182,7 @@
               <tr v-if="isLoadingAnimals">
                 <td colspan="6" class="px-6 py-8 text-center text-gray-500">Memuat data...</td>
               </tr>
-              <tr v-else-if="animals?.length === 0">
+              <tr v-else-if="!animals?.length">
                 <td colspan="6" class="px-6 py-8 text-center text-gray-500">Belum ada data hewan qurban.</td>
               </tr>
               <tr v-else v-for="animal in animals" :key="animal.id" class="hover:bg-gray-50 transition-colors">

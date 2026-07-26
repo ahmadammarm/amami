@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
-import { logisticsService } from '../../api/services/logistics';
-import type { CreateAgendaPayload, Agenda } from '../../types/logistics';
+import { agendaService } from '../../api/services/agenda';
+import type { CreateAgendaPayload, Agenda } from '../../types/agenda';
 import { PlusIcon, XIcon, CalendarIcon, ClockIcon, MapPinIcon, EditIcon } from 'lucide-vue-next';
 import { toast } from 'vue-sonner';
 
@@ -14,19 +14,19 @@ const editingId = ref<string | null>(null);
 const form = ref<CreateAgendaPayload>({
   title: '',
   description: '',
-  start_time: '',
-  end_time: '',
+  day: 'Senin',
+  time: '19:00',
   location: '',
   status: 'SCHEDULED'
 });
 
 const { data: agendas, isLoading } = useQuery({
   queryKey: ['agendas'],
-  queryFn: logisticsService.getAgendas
+  queryFn: agendaService.getAgendas
 });
 
 const createMutation = useMutation({
-  mutationFn: logisticsService.createAgenda,
+  mutationFn: agendaService.createAgenda,
   onSuccess: () => {
     toast.success('Agenda berhasil ditambahkan');
     queryClient.invalidateQueries({ queryKey: ['agendas'] });
@@ -36,7 +36,7 @@ const createMutation = useMutation({
 });
 
 const updateMutation = useMutation({
-  mutationFn: ({ id, payload }: { id: string, payload: CreateAgendaPayload }) => logisticsService.updateAgenda(id, payload),
+  mutationFn: ({ id, payload }: { id: string, payload: CreateAgendaPayload }) => agendaService.updateAgenda(id, payload),
   onSuccess: () => {
     toast.success('Agenda berhasil diperbarui');
     queryClient.invalidateQueries({ queryKey: ['agendas'] });
@@ -50,8 +50,8 @@ const openEditDialog = (agenda: Agenda) => {
   form.value = {
     title: agenda.title,
     description: agenda.description,
-    start_time: new Date(agenda.start_time).toISOString().slice(0, 16),
-    end_time: new Date(agenda.end_time).toISOString().slice(0, 16),
+    day: agenda.day,
+    time: agenda.time,
     location: agenda.location,
     status: agenda.status
   };
@@ -61,14 +61,12 @@ const openEditDialog = (agenda: Agenda) => {
 const closeDialog = () => {
   showAddDialog.value = false;
   editingId.value = null;
-  form.value = { title: '', description: '', start_time: '', end_time: '', location: '', status: 'SCHEDULED' };
+  form.value = { title: '', description: '', day: 'Senin', time: '19:00', location: '', status: 'SCHEDULED' };
 };
 
 const submitAgenda = () => {
   const payload = {
     ...form.value,
-    start_time: new Date(form.value.start_time).toISOString(),
-    end_time: new Date(form.value.end_time).toISOString(),
   };
   if (editingId.value) {
     updateMutation.mutate({ id: editingId.value, payload });
@@ -82,7 +80,7 @@ const submitAgenda = () => {
   <div class="space-y-6">
     <div class="flex items-center justify-between">
       <div>
-        <h2 class="text-2xl font-bold text-gray-900">Agenda & Logistik</h2>
+        <h2 class="text-2xl font-bold text-gray-900">Agenda</h2>
         <p class="mt-1 text-sm text-gray-500">Kelola jadwal kegiatan dan acara masjid</p>
       </div>
       <button @click="showAddDialog = true" class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 focus:ring-4 focus:ring-emerald-100 transition-colors flex items-center gap-2">
@@ -120,10 +118,12 @@ const submitAgenda = () => {
         </div>
         <p class="text-sm text-gray-600 mb-4 line-clamp-2">{{ agenda.description }}</p>
         <div class="space-y-2 text-sm text-gray-500">
-          <div class="flex items-center gap-2">
-            <ClockIcon class="w-4 h-4 text-emerald-600" />
-            <span>{{ new Date(agenda.start_time).toLocaleString('id-ID') }}</span>
-          </div>
+                <div class="flex items-center gap-1.5 mt-1 text-gray-500">
+                  <CalendarIcon class="w-4 h-4" />
+                  <span>{{ agenda.day }}</span>
+                  <ClockIcon class="w-4 h-4 ml-2" />
+                  <span>{{ agenda.time }}</span>
+                </div>
           <div class="flex items-center gap-2">
             <MapPinIcon class="w-4 h-4 text-emerald-600" />
             <span>{{ agenda.location || 'Lokasi tidak ditentukan' }}</span>
@@ -152,12 +152,20 @@ const submitAgenda = () => {
           </div>
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Waktu Mulai</label>
-              <input v-model="form.start_time" required type="datetime-local" class="block w-full rounded-lg border-gray-300 p-2.5 border" />
+              <label class="block text-sm font-medium text-gray-700 mb-1">Hari</label>
+              <select v-model="form.day" required class="block w-full rounded-lg border-gray-300 p-2.5 border">
+                <option value="Senin">Senin</option>
+                <option value="Selasa">Selasa</option>
+                <option value="Rabu">Rabu</option>
+                <option value="Kamis">Kamis</option>
+                <option value="Jumat">Jumat</option>
+                <option value="Sabtu">Sabtu</option>
+                <option value="Minggu">Minggu</option>
+              </select>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Waktu Selesai</label>
-              <input v-model="form.end_time" required type="datetime-local" class="block w-full rounded-lg border-gray-300 p-2.5 border" />
+              <label class="block text-sm font-medium text-gray-700 mb-1">Waktu</label>
+              <input v-model="form.time" required type="time" class="block w-full rounded-lg border-gray-300 p-2.5 border" />
             </div>
           </div>
           <div class="grid grid-cols-2 gap-4">

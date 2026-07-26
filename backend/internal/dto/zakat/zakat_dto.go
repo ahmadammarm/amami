@@ -6,7 +6,7 @@ import (
 
 type CollectZakatRequest struct {
 	MuzakkiID   uuid.UUID `json:"muzakki_id" binding:"required"`
-	ZakatType   string    `json:"zakat_type" binding:"required"` // e.g., "FITRAH_UANG", "FITRAH_BERAS", "MAAL"
+	ZakatType   string    `json:"zakat_type" binding:"required,oneof=FITRAH_BERAS MAAL INFAQ"` // "FITRAH_BERAS", "MAAL", "INFAQ"
 	FundID      *uint     `json:"fund_id"` // Nullable for non-cash
 	AmountOrQty float64   `json:"amount" binding:"required,gt=0"`
 	Unit        string    `json:"unit" binding:"required"` // "IDR", "KG", "LITER"

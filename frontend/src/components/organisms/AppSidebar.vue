@@ -26,7 +26,7 @@ const menuItems = [
   { name: 'Jamaah', icon: Users, path: '/jamaah', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS'] },
   { name: 'Qurban', icon: Beef, path: '/qurban', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
   { name: 'Inventory', icon: PackageSearch, path: '/inventory', roles: ['SUPER_ADMIN', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
-  { name: 'Logistics', icon: CalendarRange, path: '/logistics', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
+  { name: 'Agenda', icon: CalendarRange, path: '/agenda', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
   { name: 'Settings', icon: Settings, path: '/settings', roles: ['SUPER_ADMIN', 'SEKRETARIS'] },
   { name: 'Users', icon: Users, path: '/users', roles: ['SUPER_ADMIN'] },
 ];
