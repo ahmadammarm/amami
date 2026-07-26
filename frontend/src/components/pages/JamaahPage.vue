@@ -6,6 +6,8 @@ import { useAuthStore } from '@/stores/auth';
 import type { Jamaah, CreateJamaahPayload } from '@/types/jamaah';
 import { toast } from 'vue-sonner';
 import { Users, Search, Plus, Edit2, ShieldAlert } from 'lucide-vue-next';
+import { RecycleScroller } from 'vue-virtual-scroller';
+import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 
 const authStore = useAuthStore();
 const queryClient = useQueryClient();
@@ -28,7 +30,7 @@ const totalPages = computed(() => paginatedData.value?.total_pages || 1);
 
 // Permissions
 const canManage = computed(() => {
-  return ['SUPER_ADMIN', 'SEKRETARIS', 'TAKMIR'].includes(authStore.userRole);
+  return authStore.userRole ? ['SUPER_ADMIN', 'SEKRETARIS', 'TAKMIR'].includes(authStore.userRole) : false;
 });
 
 // Form State
@@ -134,46 +136,51 @@ const handleSearch = () => {
       </button>
     </div>
 
-    <!-- Table -->
-    <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm text-left">
-          <thead class="text-xs text-gray-700 uppercase bg-gray-50 border-b">
-            <tr>
-              <th class="px-6 py-4">Nama Lengkap</th>
-              <th class="px-6 py-4">No. HP</th>
-              <th class="px-6 py-4">Alamat</th>
-              <th class="px-6 py-4">Status Zakat</th>
-              <th v-if="canManage" class="px-6 py-4 text-right">Aksi</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="isLoading" class="border-b">
-              <td colspan="5" class="px-6 py-8 text-center text-gray-500">Memuat data jamaah...</td>
-            </tr>
-            <tr v-else-if="jamaahs.length === 0" class="border-b">
-              <td colspan="5" class="px-6 py-8 text-center text-gray-500">Tidak ada jamaah ditemukan.</td>
-            </tr>
-            <tr v-else v-for="j in jamaahs" :key="j.id" class="border-b hover:bg-gray-50 transition-colors">
-              <td class="px-6 py-4 font-medium text-gray-900">{{ j.full_name }}</td>
-              <td class="px-6 py-4 text-gray-600">{{ j.phone || '-' }}</td>
-              <td class="px-6 py-4 text-gray-600 truncate max-w-xs">{{ j.address || '-' }}</td>
-              <td class="px-6 py-4">
+    <!-- Table / Virtual Scroller -->
+    <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col h-[600px]">
+      <div class="overflow-x-auto flex-1 flex flex-col relative">
+        <div class="flex items-center text-xs text-gray-700 uppercase bg-gray-50 border-b min-w-[800px]">
+          <div class="px-6 py-4 flex-[2]">Nama Lengkap</div>
+          <div class="px-6 py-4 flex-1">No. HP</div>
+          <div class="px-6 py-4 flex-[2]">Alamat</div>
+          <div class="px-6 py-4 flex-1">Status Zakat</div>
+          <div v-if="canManage" class="px-6 py-4 w-24 text-right">Aksi</div>
+        </div>
+        
+        <div v-if="isLoading" class="p-8 text-center text-gray-500 border-b min-w-[800px]">
+          Memuat data jamaah...
+        </div>
+        <div v-else-if="jamaahs.length === 0" class="p-8 text-center text-gray-500 border-b min-w-[800px]">
+          Tidak ada jamaah ditemukan.
+        </div>
+        
+        <RecycleScroller
+          v-else
+          class="flex-1 h-full overflow-y-auto min-w-[800px]"
+          :items="jamaahs"
+          :item-size="65"
+          key-field="id"
+          v-slot="{ item: j }"
+        >
+          <div class="flex items-center text-sm border-b hover:bg-gray-50 transition-colors w-full h-[65px]">
+            <div class="px-6 flex-[2] font-medium text-gray-900 truncate">{{ j.full_name }}</div>
+            <div class="px-6 flex-1 text-gray-600 truncate">{{ j.phone || '-' }}</div>
+            <div class="px-6 flex-[2] text-gray-600 truncate max-w-xs">{{ j.address || '-' }}</div>
+            <div class="px-6 flex-1 truncate">
                 <span v-if="j.is_mustahik" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
-                  <ShieldAlert class="w-3 h-3 mr-1" /> Mustahik (Penerima)
+                  <ShieldAlert class="w-3 h-3 mr-1" /> Mustahik
                 </span>
                 <span v-else class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                   Umum (Muzakki)
                 </span>
-              </td>
-              <td v-if="canManage" class="px-6 py-4 text-right">
+            </div>
+            <div v-if="canManage" class="px-6 w-24 text-right">
                 <button @click="openEditDialog(j)" class="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 p-2 rounded-lg transition-colors">
                   <Edit2 class="w-4 h-4" />
                 </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+            </div>
+          </div>
+        </RecycleScroller>
       </div>
       <!-- Pagination Controls -->
       <div class="px-6 py-4 border-t flex items-center justify-between text-sm text-gray-500 bg-gray-50">

@@ -122,11 +122,16 @@ func NewSettingsService(repo repo.SettingsRepository) SettingsService {
 
 func (s *settingsService) UpdateMosqueProfile(userID uuid.UUID, req settings.MosqueProfileRequest) error {
 	settingsData := map[string]string{
-		"mosque_name":       req.Name,
-		"mosque_address":    req.Address,
-		"mosque_phone":      req.Phone,
-		"mosque_logo":       req.Logo,
-		"legal_yayasan_id":  req.LegalYayasanID,
+		"mosque_name":         req.Name,
+		"mosque_address":      req.Address,
+		"mosque_phone":        req.Phone,
+		"mosque_logo":         req.Logo,
+		"legal_yayasan_id":    req.LegalYayasanID,
+		"bank_name":           req.BankName,
+		"bank_account_name":   req.BankAccountName,
+		"bank_account_number": req.BankAccountNumber,
+		"zakat_fitrah_amount": req.ZakatFitrahAmount,
+		"active_hijri_year":   req.ActiveHijriYear,
 	}
 
 	for k, v := range settingsData {
@@ -162,6 +167,21 @@ func (s *settingsService) GetMosqueProfile() (*settings.MosqueProfileResponse, e
 	
 	val, err = s.repo.GetSetting("legal_yayasan_id")
 	if err == nil { res.LegalYayasanID = val.Value }
+
+	val, err = s.repo.GetSetting("bank_name")
+	if err == nil { res.BankName = val.Value }
+
+	val, err = s.repo.GetSetting("bank_account_name")
+	if err == nil { res.BankAccountName = val.Value }
+
+	val, err = s.repo.GetSetting("bank_account_number")
+	if err == nil { res.BankAccountNumber = val.Value }
+
+	val, err = s.repo.GetSetting("zakat_fitrah_amount")
+	if err == nil { res.ZakatFitrahAmount = val.Value }
+
+	val, err = s.repo.GetSetting("active_hijri_year")
+	if err == nil { res.ActiveHijriYear = val.Value }
 
 	return res, nil
 }

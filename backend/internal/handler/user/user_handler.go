@@ -14,6 +14,7 @@ type UserMgmtHandler interface {
 	InviteUser(c *gin.Context)
 	GetAllUsers(c *gin.Context)
 	UpdateUserStatus(c *gin.Context)
+	DeleteUser(c *gin.Context)
 }
 
 type userMgmtHandler struct {
@@ -45,13 +46,21 @@ func (h *userMgmtHandler) InviteUser(c *gin.Context) {
 }
 
 func (h *userMgmtHandler) GetAllUsers(c *gin.Context) {
-	users, err := h.svc.GetAllUsers()
+	page := utils.ParseQueryInt(c, "page", 1)
+	limit := utils.ParseQueryInt(c, "limit", 20)
+
+	users, total, err := h.svc.GetAllUsers(page, limit)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to fetch users")
 		return
 	}
 
-	utils.SuccessResponse(c, "Users fetched successfully", users)
+	utils.SuccessResponse(c, "Users fetched successfully", gin.H{
+		"items": users,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
 }
 
 func (h *userMgmtHandler) UpdateUserStatus(c *gin.Context) {
@@ -74,4 +83,20 @@ func (h *userMgmtHandler) UpdateUserStatus(c *gin.Context) {
 	}
 
 	utils.SuccessResponse(c, "User status updated successfully", nil)
+}
+
+func (h *userMgmtHandler) DeleteUser(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		utils.ErrorResponse(c, http.StatusBadRequest, "invalid user id format")
+		return
+	}
+
+	if err := h.svc.DeleteUser(id); err != nil {
+		utils.ErrorResponse(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	utils.SuccessResponse(c, "User deleted successfully", nil)
 }

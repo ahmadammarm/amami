@@ -5,7 +5,7 @@ import { toast } from 'vue-sonner';
 export const useUsersQuery = () => {
   return useQuery({
     queryKey: ['users'],
-    queryFn: userService.getAllUsers,
+    queryFn: () => userService.getAllUsers(1, 100),
   });
 };
 
@@ -41,6 +41,20 @@ export const useUpdateUserStatusMutation = () => {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Failed to update user status');
+    },
+  });
+};
+
+export const useDeleteUserMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => userService.deleteUser(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('User permanently deleted');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to delete user');
     },
   });
 };

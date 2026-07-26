@@ -17,8 +17,9 @@ import (
 
 type UserMgmtService interface {
 	InviteUser(req user.InviteUserRequest) (*user.UserResponse, string, error)
-	GetAllUsers() ([]user.UserResponse, error)
+	GetAllUsers(page, limit int) ([]user.UserResponse, int64, error)
 	UpdateUserStatus(userID uuid.UUID, status string) error
+	DeleteUser(userID uuid.UUID) error
 }
 
 type userMgmtService struct {
@@ -78,30 +79,44 @@ func (s *userMgmtService) InviteUser(req user.InviteUserRequest) (*user.UserResp
 	}, req.Password, nil
 }
 
-func (s *userMgmtService) GetAllUsers() ([]user.UserResponse, error) {
-	users, err := s.userRepo.FindAllUsers()
+func (s *userMgmtService) GetAllUsers(page, limit int) ([]user.UserResponse, int64, error) {
+	users, total, err := s.userRepo.FindAllUsers(page, limit)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	res := make([]user.UserResponse, len(users))
-	for i, u := range users {
-		res[i] = user.UserResponse{
+	var res []user.UserResponse
+	for _, u := range users {
+		res = append(res, user.UserResponse{
 			ID:       u.ID,
 			Username: u.Username,
 			Email:    u.Email,
 			RoleName: u.Role.Name,
 			Status:   u.Status,
-		}
+		})
 	}
-	return res, nil
+
+	return res, total, nil
 }
 
 func (s *userMgmtService) UpdateUserStatus(userID uuid.UUID, status string) error {
 	if status != "ACTIVE" && status != "SUSPENDED" {
-		return errors.New("invalid status")
+		return errors.New("invalid status, must be ACTIVE or SUSPENDED")
 	}
 	return s.userRepo.UpdateUserStatus(userID, status)
+}
+
+func (s *userMgmtService) DeleteUser(userID uuid.UUID) error {
+	user, err := s.userRepo.FindByID(userID)
+	if err != nil {
+		return errors.New("user not found")
+	}
+
+	if user.Role.Name == "SUPER_ADMIN" {
+		return errors.New("cannot delete a SUPER_ADMIN")
+	}
+
+	return s.userRepo.DeleteUser(userID)
 }
 
 func generateRandomPassword(length int) (string, error) {

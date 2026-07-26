@@ -2,8 +2,8 @@ import apiClient from '../client';
 import type { InviteUserRequest } from '../../types/user';
 
 export const userService = {
-  getAllUsers: async () => {
-    const response = await apiClient.get('/users');
+  getAllUsers: async (page = 1, limit = 100) => {
+    const response = await apiClient.get(`/users?page=${page}&limit=${limit}`);
     return response.data.data;
   },
 
@@ -14,6 +14,11 @@ export const userService = {
 
   updateUserStatus: async (id: string, status: string) => {
     const response = await apiClient.patch(`/users/${id}/status`, { status });
+    return response.data.data;
+  },
+
+  deleteUser: async (id: string) => {
+    const response = await apiClient.delete(`/users/${id}`);
     return response.data.data;
   },
 

@@ -18,10 +18,10 @@ import { dashboardService } from '@/api/services/dashboard';
 
 const authStore = useAuthStore();
 const role = computed(() => authStore.userRole);
-const userName = computed(() => authStore.user?.Username || 'User');
+const userName = computed(() => authStore.user?.full_name || authStore.user?.username || 'Admin');
 
 // Fetch Metrics from Backend
-const { data: metrics, isLoading } = useQuery({
+const { data: metrics } = useQuery({
   queryKey: ['dashboard-metrics'],
   queryFn: dashboardService.getMetrics,
   refetchInterval: 60000, // refresh every minute

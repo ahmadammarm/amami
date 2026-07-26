@@ -1,19 +1,29 @@
 package settings
 
 type MosqueProfileRequest struct {
-	Name            string `json:"name" binding:"required"`
-	Address         string `json:"address"`
-	Phone           string `json:"phone"`
-	Logo            string `json:"logo"`
-	LegalYayasanID  string `json:"legal_yayasan_id"`
+	Name               string `json:"name" binding:"required"`
+	Address            string `json:"address"`
+	Phone              string `json:"phone"`
+	Logo               string `json:"logo"`
+	LegalYayasanID     string `json:"legal_yayasan_id"`
+	BankName           string `json:"bank_name"`
+	BankAccountName    string `json:"bank_account_name"`
+	BankAccountNumber  string `json:"bank_account_number"`
+	ZakatFitrahAmount  string `json:"zakat_fitrah_amount"`
+	ActiveHijriYear    string `json:"active_hijri_year"`
 }
 
 type MosqueProfileResponse struct {
-	Name            string `json:"name"`
-	Address         string `json:"address"`
-	Phone           string `json:"phone"`
-	Logo            string `json:"logo"`
-	LegalYayasanID  string `json:"legal_yayasan_id"`
+	Name               string `json:"name"`
+	Address            string `json:"address"`
+	Phone              string `json:"phone"`
+	Logo               string `json:"logo"`
+	LegalYayasanID     string `json:"legal_yayasan_id"`
+	BankName           string `json:"bank_name"`
+	BankAccountName    string `json:"bank_account_name"`
+	BankAccountNumber  string `json:"bank_account_number"`
+	ZakatFitrahAmount  string `json:"zakat_fitrah_amount"`
+	ActiveHijriYear    string `json:"active_hijri_year"`
 }
 
 type SMTPConfigRequest struct {

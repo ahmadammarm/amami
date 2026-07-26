@@ -54,13 +54,14 @@ func main() {
 	// Fix Gin warning by setting trusted proxies
 	_ = r.SetTrustedProxies(nil)
 
-	// API V1 Group
+	// API Versioning & Global Rate Limiting
 	v1 := r.Group("/api/v1")
+	v1.Use(middleware.RateLimiter(100, 1*time.Minute)) // 100 req/min for general API
 	{
-		// Auth Module (Public)
-		auth := v1.Group("/auth")
+		// Auth Module (Public + Strict Rate Limit)
+		auth := v1.Group("/auth", middleware.RateLimiter(5, 1*time.Minute)) // 5 req/min for auth
 		{
-			auth.POST("/login", middleware.RateLimit(5, time.Minute), config.AuthHandler.Login)
+			auth.POST("/login", config.AuthHandler.Login)
 			auth.GET("/me", middleware.RequireAuth(), config.AuthHandler.GetMe)
 			auth.POST("/change-password", middleware.RequireAuth(), config.AuthHandler.ChangePassword)
 		}
@@ -68,9 +69,30 @@ func main() {
 		// User Management Module (Protected)
 		users := v1.Group("/users", middleware.RequireAuth(), middleware.RejectScope(utils.ScopePasswordReset))
 		{
-			users.POST("/invite", middleware.RequirePermission(config.RoleRepo, "user:manage"), config.UserHandler.Handler.InviteUser)
+			users.POST("/invite", middleware.RequirePermission(config.RoleRepo, "user:invite"), config.UserHandler.Handler.InviteUser)
 			users.GET("", middleware.RequirePermission(config.RoleRepo, "user:manage"), config.UserHandler.Handler.GetAllUsers)
 			users.PATCH("/:id/status", middleware.RequirePermission(config.RoleRepo, "user:manage"), config.UserHandler.Handler.UpdateUserStatus)
+			users.DELETE("/:id", middleware.RequirePermission(config.RoleRepo, "user:manage"), config.UserHandler.Handler.DeleteUser)
+		}
+
+		// Qurban Module
+		qurbanRoutes := v1.Group("/qurban", middleware.RequireAuth())
+		{
+			// Packages
+			qurbanRoutes.GET("/packages", config.QurbanHandler.Handler.GetAllPackages)
+			qurbanRoutes.POST("/packages", config.QurbanHandler.Handler.CreatePackage)
+			qurbanRoutes.PUT("/packages/:id", config.QurbanHandler.Handler.UpdatePackage)
+			qurbanRoutes.DELETE("/packages/:id", config.QurbanHandler.Handler.DeletePackage)
+
+			// Bookings
+			qurbanRoutes.GET("/bookings", config.QurbanHandler.Handler.GetBookings)
+			qurbanRoutes.POST("/bookings", config.QurbanHandler.Handler.CreateBooking)
+
+			// Animals
+			qurbanRoutes.GET("/animals", config.QurbanHandler.Handler.GetAnimals)
+			qurbanRoutes.POST("/animals", config.QurbanHandler.Handler.CreateAnimal)
+			qurbanRoutes.PUT("/animals/:id", config.QurbanHandler.Handler.UpdateAnimal)
+			qurbanRoutes.DELETE("/animals/:id", config.QurbanHandler.Handler.DeleteAnimal)
 		}
 
 		// System Settings Module
@@ -107,6 +129,26 @@ func main() {
 		{
 			// Read-only for authenticated users
 			dashboard.GET("/metrics", config.DashboardHandler.Handler.GetMetrics)
+		}
+
+		// Logistics & Inventory Routes
+		logisticsRoutes := v1.Group("/logistics", middleware.RequireAuth())
+		logisticsRoutes.Use(middleware.RequirePermission(config.RoleRepo, "inventory:manage"))
+		{
+			// Assets
+			logisticsRoutes.GET("", config.LogisticsHandler.Handler.GetAllAssets)
+			logisticsRoutes.POST("/assets", config.LogisticsHandler.Handler.CreateAsset)
+			logisticsRoutes.PUT("/assets/:id", config.LogisticsHandler.Handler.UpdateAsset)
+			logisticsRoutes.DELETE("/assets/:id", config.LogisticsHandler.Handler.DeleteAsset)
+
+			// Loans
+			logisticsRoutes.POST("/assets/:id/loans", config.LogisticsHandler.Handler.CreateLoan)
+			logisticsRoutes.PUT("/assets/loans/:loanId/return", config.LogisticsHandler.Handler.ReturnLoan)
+
+			// Agenda
+			logisticsRoutes.GET("/agenda", config.LogisticsHandler.Handler.GetAgendas)
+			logisticsRoutes.POST("/agenda", config.LogisticsHandler.Handler.CreateAgenda)
+			logisticsRoutes.PUT("/agenda/:id", config.LogisticsHandler.Handler.UpdateAgenda)
 		}
 
 		// Jamaah Module

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { useUsersQuery, useUpdateUserStatusMutation } from '../../composables/useUserQuery';
+import { useUsersQuery, useUpdateUserStatusMutation, useDeleteUserMutation } from '../../composables/useUserQuery';
 import { 
   Users as UsersIcon, 
   UserPlus, 
@@ -12,12 +12,23 @@ import {
   RefreshCcw,
   Ban,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Trash2
 } from 'lucide-vue-next';
 import Button from '../atoms/button/Button.vue';
 import Input from '../atoms/input/Input.vue';
 import CreateUserDialog from '../molecules/CreateUserDialog.vue';
 import SuccessDialog from '../atoms/SuccessDialog.vue';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../atoms/alert-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,8 +38,11 @@ import {
 
 const { data: users, isLoading, isRefetching, refetch } = useUsersQuery();
 const { mutate: updateStatus } = useUpdateUserStatusMutation();
+const { mutate: deleteUser, isPending: isDeleting } = useDeleteUserMutation();
 
 const isInviteDialogOpen = ref(false);
+const isDeleteDialogOpen = ref(false);
+const userToDelete = ref<any>(null);
 const searchQuery = ref('');
 const successDialog = ref({
   open: false,
@@ -47,6 +61,22 @@ const handleInviteSuccess = (tempPass: string) => {
 const toggleUserStatus = (user: any) => {
   const newStatus = user.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
   updateStatus({ id: user.id, status: newStatus });
+};
+
+const confirmDelete = (user: any) => {
+  userToDelete.value = user;
+  isDeleteDialogOpen.value = true;
+};
+
+const executeDelete = () => {
+  if (userToDelete.value) {
+    deleteUser(userToDelete.value.id, {
+      onSuccess: () => {
+        isDeleteDialogOpen.value = false;
+        userToDelete.value = null;
+      }
+    });
+  }
 };
 
 const getStatusColor = (status: string) => {
@@ -131,7 +161,7 @@ const getStatusColor = (status: string) => {
               </tr>
             </template>
             <template v-else>
-              <tr v-for="user in users" :key="user.id" class="hover:bg-gray-50/30 transition-colors group">
+              <tr v-for="user in users?.items" :key="user.id" class="hover:bg-gray-50/30 transition-colors group">
                 <td class="px-8 py-5">
                   <div class="flex items-center gap-4">
                     <div class="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
@@ -171,17 +201,20 @@ const getStatusColor = (status: string) => {
                     <DropdownMenuContent align="end" class="w-48 rounded-xl p-1 shadow-xl border-gray-100">
                       <DropdownMenuItem @click="toggleUserStatus(user)" class="rounded-lg font-bold text-xs py-2.5 cursor-pointer">
                         <template v-if="user.status === 'ACTIVE'">
-                          <Ban class="w-4 h-4 mr-2 text-red-500" /> Suspend User
+                          <Ban class="w-4 h-4 mr-2 text-amber-500" /> Suspend User
                         </template>
                         <template v-else>
                           <CheckCircle2 class="w-4 h-4 mr-2 text-emerald-500" /> Activate User
                         </template>
                       </DropdownMenuItem>
+                      <DropdownMenuItem v-if="user.role_name !== 'SUPER_ADMIN'" @click="confirmDelete(user)" class="rounded-lg font-bold text-xs py-2.5 cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700">
+                        <Trash2 class="w-4 h-4 mr-2" /> Hapus User
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </td>
               </tr>
-              <tr v-if="!users?.length">
+              <tr v-if="!users?.items?.length">
                 <td colspan="4" class="py-24 text-center">
                   <div class="max-w-xs mx-auto space-y-4">
                     <div class="p-4 bg-gray-50 rounded-full w-16 h-16 flex items-center justify-center mx-auto">
@@ -214,5 +247,22 @@ const getStatusColor = (status: string) => {
       :title="successDialog.title"
       :description="successDialog.description"
     />
+
+    <AlertDialog v-model:open="isDeleteDialogOpen">
+      <AlertDialogContent class="rounded-2xl">
+        <AlertDialogHeader>
+          <AlertDialogTitle class="text-xl">Hapus Pengguna Secara Permanen?</AlertDialogTitle>
+          <AlertDialogDescription class="text-base leading-relaxed">
+            Anda yakin ingin menghapus <strong>{{ userToDelete?.username }}</strong>? Seluruh data yang berkaitan dengan pengguna ini (seperti identitas jamaah) juga akan ikut terhapus. Aksi ini tidak dapat dibatalkan.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter class="gap-3">
+          <AlertDialogCancel class="rounded-xl h-11 font-bold" :disabled="isDeleting">Batal</AlertDialogCancel>
+          <AlertDialogAction @click="executeDelete" :disabled="isDeleting" class="bg-red-500 hover:bg-red-600 focus:ring-red-500 rounded-xl h-11 font-bold shadow-lg shadow-red-200">
+            {{ isDeleting ? 'Menghapus...' : 'Ya, Hapus' }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>

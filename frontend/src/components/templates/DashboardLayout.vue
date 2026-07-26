@@ -86,6 +86,7 @@ const canViewSettings = computed(() => {
             <Menu v-if="!isSidebarOpen" class="w-5 h-5" />
             <X v-else class="w-5 h-5" />
           </button>
+          
           <h1 class="text-xl font-bold text-primary">amami</h1>
         </div>
 

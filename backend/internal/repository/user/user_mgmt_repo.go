@@ -8,8 +8,9 @@ import (
 
 type UserMgmtRepository interface {
 	CreateUserWithProfile(user *domain.User, jamaah *domain.Jamaah) error
-	FindAllUsers() ([]domain.User, error)
+	FindAllUsers(page int, limit int) ([]domain.User, int64, error)
 	UpdateUserStatus(userID uuid.UUID, status string) error
+	DeleteUser(userID uuid.UUID) error
 	FindByID(id uuid.UUID) (*domain.User, error)
 }
 
@@ -36,12 +37,19 @@ func (r *userMgmtRepository) CreateUserWithProfile(user *domain.User, jamaah *do
 	})
 }
 
-func (r *userMgmtRepository) FindAllUsers() ([]domain.User, error) {
+func (r *userMgmtRepository) FindAllUsers(page int, limit int) ([]domain.User, int64, error) {
 	var users []domain.User
-	if err := r.db.Preload("Role").Find(&users).Error; err != nil {
-		return nil, err
+	var total int64
+
+	if err := r.db.Model(&domain.User{}).Count(&total).Error; err != nil {
+		return nil, 0, err
 	}
-	return users, nil
+
+	offset := (page - 1) * limit
+	if err := r.db.Preload("Role").Preload("JamaahProfile").Offset(offset).Limit(limit).Find(&users).Error; err != nil {
+		return nil, 0, err
+	}
+	return users, total, nil
 }
 
 func (r *userMgmtRepository) UpdateUserStatus(userID uuid.UUID, status string) error {
@@ -50,8 +58,22 @@ func (r *userMgmtRepository) UpdateUserStatus(userID uuid.UUID, status string) e
 
 func (r *userMgmtRepository) FindByID(id uuid.UUID) (*domain.User, error) {
 	var user domain.User
-	if err := r.db.Preload("Role").First(&user, "id = ?", id).Error; err != nil {
+	if err := r.db.Preload("Role").Preload("JamaahProfile").First(&user, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil
+}
+
+func (r *userMgmtRepository) DeleteUser(userID uuid.UUID) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// First delete Jamaah Profile if it exists
+		if err := tx.Where("user_id = ?", userID).Delete(&domain.Jamaah{}).Error; err != nil {
+			return err
+		}
+		// Then delete the User
+		if err := tx.Where("id = ?", userID).Delete(&domain.User{}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
 }

@@ -40,6 +40,9 @@ func (r *settingsRepository) UpsertSetting(key string, value string, isSecret bo
 func (r *settingsRepository) GetSetting(key string) (*domain.SystemSetting, error) {
 	var setting domain.SystemSetting
 	if err := r.db.Select("id", "key", "value", "is_secret").Where("key = ?", key).First(&setting).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return &domain.SystemSetting{Key: key, Value: ""}, nil
+		}
 		return nil, err
 	}
 	return &setting, nil

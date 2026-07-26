@@ -4,28 +4,32 @@ import (
 	authHandler "github.com/ahmadammarm/amami/backend/internal/handler/auth"
 	authRepo "github.com/ahmadammarm/amami/backend/internal/repository/auth"
 	authSvc "github.com/ahmadammarm/amami/backend/internal/service/auth"
-	userModule "github.com/ahmadammarm/amami/backend/internal/di/user"
 	dashboardModule "github.com/ahmadammarm/amami/backend/internal/di/dashboard"
-	jamaahModule "github.com/ahmadammarm/amami/backend/internal/di/jamaah"
 	financeModule "github.com/ahmadammarm/amami/backend/internal/di/finance"
-	zakatModule "github.com/ahmadammarm/amami/backend/internal/di/zakat"
+	jamaahModule "github.com/ahmadammarm/amami/backend/internal/di/jamaah"
+	logisticsModule "github.com/ahmadammarm/amami/backend/internal/di/logistics"
+	qurbanModule "github.com/ahmadammarm/amami/backend/internal/di/qurban"
 	settingsModule "github.com/ahmadammarm/amami/backend/internal/di/settings"
+	userModule "github.com/ahmadammarm/amami/backend/internal/di/user"
+	zakatModule "github.com/ahmadammarm/amami/backend/internal/di/zakat"
 	"github.com/ahmadammarm/amami/backend/pkg/config"
 	"github.com/ahmadammarm/amami/backend/pkg/database"
 	"gorm.io/gorm"
 )
 
 type Config struct {
-	AuthHandler     authHandler.AuthHandler
-	UserHandler     userModule.Module
+	AuthHandler      authHandler.AuthHandler
+	UserHandler      userModule.Module
 	SettingsHandler  settingsModule.Module
 	FinanceHandler   financeModule.Module
 	DashboardHandler dashboardModule.Module
 	JamaahHandler    jamaahModule.Module
 	ZakatHandler     zakatModule.Module
+	LogisticsHandler logisticsModule.Module
+	QurbanHandler    qurbanModule.Module
 	RoleRepo         authRepo.RoleRepository
 	DB               *gorm.DB
-	AppConfig       *config.Config
+	AppConfig        *config.Config
 }
 
 func Initialize() (*Config, error) {
@@ -58,6 +62,12 @@ func Initialize() (*Config, error) {
 	// Zakat Module
 	zakatMod := zakatModule.NewModule(db)
 
+	// Logistics Module
+	logisticsMod := logisticsModule.NewModule(db)
+
+	// Qurban Module
+	qurbanMod := qurbanModule.NewModule(db)
+
 	return &Config{
 		AuthHandler:      authH,
 		UserHandler:      *userMod,
@@ -66,6 +76,8 @@ func Initialize() (*Config, error) {
 		DashboardHandler: *dashboardMod,
 		JamaahHandler:    *jamaahMod,
 		ZakatHandler:     *zakatMod,
+		LogisticsHandler: *logisticsMod,
+		QurbanHandler:    *qurbanMod,
 		RoleRepo:         roleRepo,
 		DB:               db,
 		AppConfig:        cfg,

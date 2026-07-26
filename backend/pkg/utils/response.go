@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -25,7 +26,25 @@ func JSONResponse(c *gin.Context, code int, success bool, message string, data i
 }
 
 func SuccessResponse(c *gin.Context, message string, data interface{}) {
-	JSONResponse(c, http.StatusOK, true, message, data, nil)
+	c.JSON(http.StatusOK, Response{
+		Success: true,
+		Message: message,
+		Data:    data,
+	})
+}
+
+// ParseQueryInt parses a query parameter to an integer with a fallback default value
+func ParseQueryInt(c *gin.Context, key string, defaultValue int) int {
+	valStr := c.Query(key)
+	if valStr == "" {
+		return defaultValue
+	}
+	
+	val, err := strconv.Atoi(valStr)
+	if err != nil {
+		return defaultValue
+	}
+	return val
 }
 
 func ErrorResponse(c *gin.Context, code int, message string) {

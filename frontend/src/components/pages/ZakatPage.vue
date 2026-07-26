@@ -2,12 +2,12 @@
 import { ref, computed } from 'vue';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
 import { zakatService } from '@/api/services/zakat';
-import { jamaahService } from '@/api/services/jamaah';
 import { financeService } from '@/api/services/finance';
 import { useAuthStore } from '@/stores/auth';
 import type { CollectZakatPayload, DistributeZakatPayload } from '@/types/zakat';
 import { toast } from 'vue-sonner';
 import { HeartHandshake, ArrowDown, ArrowUp } from 'lucide-vue-next';
+import AsyncJamaahSelect from '../molecules/AsyncJamaahSelect.vue';
 
 const authStore = useAuthStore();
 const queryClient = useQueryClient();
@@ -56,7 +56,7 @@ watch(() => distributeForm.value.unit, (newUnit) => {
 
 // Permissions
 const canManage = computed(() => {
-  return ['SUPER_ADMIN', 'BENDAHARA'].includes(authStore.userRole);
+  return authStore.userRole ? ['SUPER_ADMIN', 'BENDAHARA'].includes(authStore.userRole) : false;
 });
 
 // Queries
@@ -70,18 +70,14 @@ const { data: distributions } = useQuery({
   queryFn: () => zakatService.getDistributions(1, 50),
 });
 
-const { data: jamaahs } = useQuery({
-  queryKey: ['jamaahs-all'],
-  queryFn: () => jamaahService.getJamaahs(1, 100, ''),
-});
+// removed unused jamaahs query
 
 const { data: funds } = useQuery({
   queryKey: ['funds'],
   queryFn: financeService.getFunds,
 });
 
-const muzakkis = computed(() => jamaahs.value?.data || []);
-const mustahiks = computed(() => (jamaahs.value?.data || []).filter(j => j.is_mustahik));
+// Removed unused muzakkis and mustahiks
 
 // Mutations
 const collectMutation = useMutation({
@@ -226,10 +222,7 @@ const formatCurrency = (amount: number) => {
           <div class="p-6 space-y-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Muzakki (Donatur)</label>
-              <select v-model="collectForm.muzakki_id" required class="block w-full rounded-lg border-gray-300 p-2.5 border">
-                <option value="" disabled>Pilih Muzakki</option>
-                <option v-for="m in muzakkis" :key="m.id" :value="m.id">{{ m.full_name }}</option>
-              </select>
+              <AsyncJamaahSelect v-model="collectForm.muzakki_id" placeholder="Cari Muzakki (Donatur)..." />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Jenis Zakat</label>
@@ -285,10 +278,7 @@ const formatCurrency = (amount: number) => {
           <div class="p-6 space-y-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Mustahik (Penerima)</label>
-              <select v-model="distributeForm.mustahik_id" required class="block w-full rounded-lg border-gray-300 p-2.5 border">
-                <option value="" disabled>Pilih Mustahik</option>
-                <option v-for="m in mustahiks" :key="m.id" :value="m.id">{{ m.full_name }}</option>
-              </select>
+              <AsyncJamaahSelect v-model="distributeForm.mustahik_id" :mustahik-only="true" placeholder="Cari Mustahik..." />
               <p class="text-xs text-gray-500 mt-1">Hanya menampilkan jamaah yang ditandai sebagai Mustahik.</p>
             </div>
             <div class="flex items-center gap-4 border-b border-gray-100 pb-4">
