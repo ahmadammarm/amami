@@ -1,4 +1,4 @@
-# Amami (Amanah Management & Mosque Intelligence)
+# Amami (Aplikasi Manajemen Masjid)
 
 Amami is a comprehensive Enterprise Resource Planning (ERP) platform designed to professionalize mosque operations. It transforms traditional, manual processes into a digital, auditable, and data-driven management framework. The system implements a strict Role-Based Access Control (RBAC) model to govern user permissions across various modules.
 
