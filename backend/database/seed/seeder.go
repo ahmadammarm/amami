@@ -113,6 +113,18 @@ func Seed(db *gorm.DB) error {
 		}
 	}
 
+	// 5.5 Seed Default Funds
+	defaultFunds := []domain.Fund{
+		{Name: "Kas Operasional Masjid", Code: "KAS-OPR", CurrentBalance: 0},
+		{Name: "Kas Pembangunan", Code: "KAS-PEM", CurrentBalance: 0},
+		{Name: "Kas Anak Yatim", Code: "KAS-YAT", CurrentBalance: 0},
+	}
+	for _, f := range defaultFunds {
+		if err := db.FirstOrCreate(&f, domain.Fund{Code: f.Code}).Error; err != nil {
+			return err
+		}
+	}
+
 	// 6. Seed Audit Logs
 	for i := 1; i <= 25; i++ {
 		action := "UPDATE"

@@ -1,140 +1,225 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import { useAuthStore } from '../../stores/auth';
-import { useMosqueProfileQuery, useAuditLogsQuery } from '../../composables/useSettingsQuery';
-import { Building2, Users, HandHeart, Calendar, History, User, Clock, Edit3, Loader2 } from 'lucide-vue-next';
-import SuccessDialog from '../atoms/SuccessDialog.vue';
+import { computed } from 'vue';
+import { useAuthStore } from '@/stores/auth';
+import { 
+  Wallet, 
+  Users, 
+  Activity, 
+  Package, 
+  BookOpen, 
+  HeartHandshake, 
+  TrendingUp, 
+  AlertTriangle,
+  Server,
+  FileText
+} from 'lucide-vue-next';
+import { useQuery } from '@tanstack/vue-query';
+import { dashboardService } from '@/api/services/dashboard';
 
 const authStore = useAuthStore();
-const route = useRoute();
-const router = useRouter();
-const { data: profile, isLoading } = useMosqueProfileQuery();
+const role = computed(() => authStore.userRole);
+const userName = computed(() => authStore.user?.Username || 'User');
 
-// Fetch last 5 activity logs
-const { data: auditData, isLoading: isLogsLoading } = useAuditLogsQuery(1, 5);
-const recentActivities = computed(() => auditData.value?.logs || []);
-
-const showLoginSuccess = ref(false);
-
-const stats = [
-  { name: 'Total Jamaah', value: '1,240', icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
-  { name: 'Infaq Month', value: 'Rp 12.5M', icon: HandHeart, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-  { name: 'Active Events', value: '12', icon: Calendar, color: 'text-amber-600', bg: 'bg-amber-50' },
-];
-
-onMounted(() => {
-  if (route.query.loginSuccess === 'true') {
-    showLoginSuccess.value = true;
-    const query = { ...route.query };
-    delete query.loginSuccess;
-    router.replace({ query });
-  }
+// Fetch Metrics from Backend
+const { data: metrics, isLoading } = useQuery({
+  queryKey: ['dashboard-metrics'],
+  queryFn: dashboardService.getMetrics,
+  refetchInterval: 60000, // refresh every minute
 });
+
+// Format utilities
+const formatCurrency = (amount: number = 0) => {
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(amount);
+};
+
+const greeting = computed(() => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Selamat Pagi';
+  if (hour < 15) return 'Selamat Siang';
+  if (hour < 18) return 'Selamat Sore';
+  return 'Selamat Malam';
+});
+
+// Role checks
+const isSuperAdmin = computed(() => role.value === 'SUPER_ADMIN');
+const isBendahara = computed(() => role.value === 'BENDAHARA');
+const isTakmir = computed(() => role.value === 'TAKMIR');
+const isSekretaris = computed(() => role.value === 'SEKRETARIS');
 </script>
 
 <template>
-  <div class="max-w-6xl mx-auto space-y-8">
-    <header class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <div>
-        <h2 class="text-3xl font-bold text-gray-900 leading-tight">Assalamu'alaikum, {{ authStore.user?.username }}!</h2>
-        <p class="text-gray-500 font-medium mt-1">Welcome back to the mosque management dashboard.</p>
+  <div class="space-y-8 animate-in fade-in duration-500 pb-10">
+    <!-- Header Section -->
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between bg-gradient-to-r from-emerald-700 to-teal-800 rounded-2xl p-8 text-white shadow-lg overflow-hidden relative">
+      <!-- Decorative background element -->
+      <div class="absolute -right-20 -top-20 opacity-10">
+        <svg width="300" height="300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
       </div>
       
-      <div v-if="!isLoading && profile" class="flex items-center gap-3 px-4 py-2.5 bg-white rounded-xl shadow-sm border border-gray-100">
-        <div class="p-1.5 bg-primary/10 rounded-lg">
-          <Building2 class="w-5 h-5 text-primary" />
-        </div>
-        <span class="text-sm font-bold text-gray-700 tracking-tight">{{ profile.name }}</span>
-      </div>
-    </header>
-
-    <!-- Stats Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <div 
-        v-for="stat in stats" 
-        :key="stat.name"
-        class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-5 transition-all hover:shadow-md hover:translate-y-[-2px]"
-      >
-        <div :class="[stat.bg, stat.color, 'p-4 rounded-xl shadow-sm']">
-          <component :is="stat.icon" class="w-7 h-7" />
-        </div>
-        <div>
-          <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">{{ stat.name }}</p>
-          <p class="text-2xl font-bold text-gray-900 mt-0.5">{{ stat.value }}</p>
+      <div class="z-10 relative">
+        <h1 class="text-3xl font-bold tracking-tight">{{ greeting }}, {{ userName }}!</h1>
+        <p class="mt-2 text-emerald-100 text-lg max-w-2xl">
+          <span v-if="isSuperAdmin">Sistem kontrol utama Amami. Seluruh operasional masjid terpantau dengan baik.</span>
+          <span v-if="isBendahara">Ringkasan keuangan dan Zakat hari ini. Transparansi dan akuntabilitas adalah prioritas kita.</span>
+          <span v-if="isTakmir">Ringkasan operasional masjid. Mari kita pastikan semua logistik dan inventaris berjalan lancar.</span>
+          <span v-if="isSekretaris">Pusat data jamaah dan jadwal masjid. Pastikan semua administrasi terorganisir.</span>
+        </p>
+        <div class="mt-4 inline-flex items-center rounded-full bg-emerald-900/50 px-3 py-1 text-sm font-medium text-emerald-100 backdrop-blur-sm border border-emerald-500/30">
+          <Activity class="w-4 h-4 mr-2" /> 
+          Peran Anda saat ini: <span class="font-bold ml-1">{{ role }}</span>
         </div>
       </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-      <!-- Left Column: Overview -->
-      <section class="lg:col-span-2 bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-        <h3 class="text-xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-          <div class="w-1.5 h-6 bg-primary rounded-full"></div>
-          Financial Performance
-        </h3>
-        
-        <div class="aspect-[16/9] bg-gray-50/50 rounded-xl flex items-center justify-center border-2 border-dashed border-gray-200">
-          <div class="text-center space-y-2">
-            <p class="text-gray-400 font-medium italic">Activity charts and trends visualization will appear here.</p>
-            <p class="text-xs text-gray-300 uppercase tracking-widest font-bold">Module Under Construction</p>
+    <!-- BENDAHARA / SUPER ADMIN: Finance & Zakat -->
+    <div v-if="isBendahara || isSuperAdmin" class="space-y-4">
+      <div class="flex items-center text-gray-800">
+        <Wallet class="w-6 h-6 mr-2 text-emerald-600" />
+        <h2 class="text-xl font-bold">Keuangan & Zakat</h2>
+      </div>
+      <div class="grid gap-6 md:grid-cols-3">
+        <!-- Kas Card -->
+        <div class="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
+          <div class="flex items-center justify-between text-gray-500">
+            <h3 class="text-sm font-medium">Total Saldo Kas</h3>
+            <TrendingUp class="w-4 h-4 text-emerald-500" />
           </div>
+          <div class="mt-4 text-3xl font-bold text-gray-900">{{ formatCurrency(metrics?.finance.total_balance) }}</div>
+          <p class="mt-2 text-sm text-emerald-600 font-medium">+ {{ formatCurrency(metrics?.finance.monthly_inflow) }} bulan ini</p>
         </div>
-      </section>
 
-      <!-- Right Column: Recent Activities -->
-      <section class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
-        <div class="px-6 py-5 border-b border-gray-50 bg-gray-50/30 flex items-center justify-between">
-          <h3 class="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <History class="w-5 h-5 text-primary" />
-            Recent Activities
-          </h3>
-          <router-link v-if="authStore.userRole === 'SUPER_ADMIN'" to="/settings" class="text-xs font-bold text-primary hover:underline uppercase tracking-tighter">View All</router-link>
+        <!-- Zakat Card -->
+        <div class="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
+          <div class="flex items-center justify-between text-gray-500">
+            <h3 class="text-sm font-medium">Zakat Terkumpul</h3>
+            <HeartHandshake class="w-4 h-4 text-blue-500" />
+          </div>
+          <div class="mt-4 text-3xl font-bold text-gray-900">{{ formatCurrency(metrics?.zakat.collected) }}</div>
+          <div class="mt-4 h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full bg-blue-500 rounded-full" style="width: 15%"></div>
+          </div>
+          <p class="mt-2 text-xs text-gray-400">Distribusi belum dimulai</p>
         </div>
-        
-        <div class="flex-1 overflow-y-auto max-h-[500px]">
-          <div v-if="isLogsLoading" class="p-8 text-center">
-            <Loader2 class="w-8 h-8 animate-spin text-primary/40 mx-auto" />
+
+        <!-- Mustahik Card -->
+        <div class="rounded-2xl border border-gray-100 bg-gradient-to-br from-gray-900 to-gray-800 p-6 text-white shadow-sm hover:shadow-lg transition-shadow">
+          <div class="flex items-center justify-between text-gray-300">
+            <h3 class="text-sm font-medium">Verifikasi Mustahik</h3>
+            <Users class="w-4 h-4 text-gray-300" />
           </div>
-          <div v-else-if="!recentActivities?.length" class="p-12 text-center text-gray-400 italic text-sm">
-            No recent activities found.
+          <div class="mt-4 text-4xl font-bold">{{ metrics?.zakat.mustahik || 0 }} <span class="text-lg font-normal text-gray-400">KK</span></div>
+          <p class="mt-2 text-sm text-gray-300">Terdaftar dan terverifikasi untuk menerima zakat.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAKMIR / SUPER ADMIN: Logistics & Qurban -->
+    <div v-if="isTakmir || isSuperAdmin" class="space-y-4">
+      <div class="flex items-center text-gray-800">
+        <Package class="w-6 h-6 mr-2 text-orange-500" />
+        <h2 class="text-xl font-bold">Logistik & Qurban</h2>
+      </div>
+      <div class="grid gap-6 md:grid-cols-3">
+        <!-- Qurban Card -->
+        <div class="rounded-2xl border border-orange-100 bg-orange-50 p-6 shadow-sm">
+          <h3 class="text-sm font-medium text-orange-800">Hewan Qurban</h3>
+          <div class="mt-4 flex items-baseline gap-4">
+            <div class="text-3xl font-bold text-orange-900">{{ metrics?.qurban.cows || 0 }} <span class="text-sm font-normal text-orange-700">Sapi</span></div>
+            <div class="text-3xl font-bold text-orange-900">{{ metrics?.qurban.goats || 0 }} <span class="text-sm font-normal text-orange-700">Kambing</span></div>
           </div>
-          <div v-else class="divide-y divide-gray-50">
-            <div 
-              v-for="log in recentActivities" 
-              :key="log.id"
-              class="px-6 py-4 hover:bg-gray-50/50 transition-colors"
-            >
-              <div class="flex items-start gap-3">
-                <div class="mt-1 p-1.5 bg-gray-100 rounded-lg text-gray-500">
-                  <User v-if="log.action === 'LOGIN'" class="w-3.5 h-3.5" />
-                  <Edit3 v-else class="w-3.5 h-3.5" />
-                </div>
-                <div class="min-w-0 flex-1">
-                  <p class="text-sm font-bold text-gray-800 truncate">
-                    {{ log.user }} <span class="font-medium text-gray-500">{{ log.action.toLowerCase() }}d</span>
-                  </p>
-                  <p class="text-xs text-gray-500 font-medium truncate mt-0.5">
-                    {{ log.entity }}
-                  </p>
-                  <div class="flex items-center gap-1.5 mt-1.5 text-[10px] text-gray-400 font-bold uppercase tracking-tight">
-                    <Clock class="w-3 h-3" />
-                    {{ log.timestamp }}
-                  </div>
-                </div>
-              </div>
+          <p class="mt-2 text-sm text-orange-700">Tahun ini</p>
+        </div>
+
+        <!-- Inventory Alerts -->
+        <div class="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between text-gray-500">
+              <h3 class="text-sm font-medium">Status Inventaris</h3>
+              <AlertTriangle class="w-4 h-4 text-red-500" />
+            </div>
+            <div class="mt-4 flex items-baseline gap-2">
+              <span class="text-3xl font-bold text-red-600">{{ metrics?.logistics.broken_assets || 0 }}</span>
+              <span class="text-sm text-gray-500">aset butuh perbaikan</span>
             </div>
           </div>
+          <button class="mt-4 w-full rounded-lg bg-gray-50 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">Lihat Detail Inventaris</button>
         </div>
-      </section>
+        
+        <!-- Peminjaman -->
+        <div class="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div class="flex items-center justify-between text-gray-500">
+            <h3 class="text-sm font-medium">Barang Dipinjam</h3>
+            <BookOpen class="w-4 h-4" />
+          </div>
+          <div class="mt-4 text-4xl font-bold text-gray-900">{{ metrics?.logistics.active_loans || 0 }}</div>
+          <p class="mt-2 text-sm text-gray-500">Peminjaman aktif oleh jamaah saat ini.</p>
+        </div>
+      </div>
     </div>
 
-    <!-- Welcome Success Dialog -->
-    <SuccessDialog
-      v-model:open="showLoginSuccess"
-      title="Assalamu'alaikum!"
-      :description="`Welcome back, ${authStore.user?.username}. You have successfully signed in to the amami ERP system.`"
-      buttonText="Start Working"
-    />
+    <!-- SEKRETARIS / SUPER ADMIN: Administration & Jamaah -->
+    <div v-if="isSekretaris || isSuperAdmin" class="space-y-4">
+      <div class="flex items-center text-gray-800">
+        <FileText class="w-6 h-6 mr-2 text-blue-600" />
+        <h2 class="text-xl font-bold">Administrasi & Jamaah</h2>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+        <div class="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm flex items-center justify-between">
+          <div>
+            <h3 class="text-sm font-medium text-gray-500">Total Jamaah Terdaftar</h3>
+            <div class="mt-2 text-4xl font-bold text-gray-900">{{ metrics?.jamaah.total || 0 }}</div>
+            <p class="mt-1 text-sm text-green-600">+{{ metrics?.jamaah.newly_registered || 0 }} bulan ini</p>
+          </div>
+          <div class="h-16 w-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center">
+            <Users class="w-8 h-8" />
+          </div>
+        </div>
+
+        <div class="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm flex items-center justify-between">
+          <div>
+            <h3 class="text-sm font-medium text-gray-500">Agenda Mendatang</h3>
+            <div class="mt-2 text-4xl font-bold text-gray-900">{{ metrics?.logistics.upcoming_agendas || 0 }}</div>
+            <p class="mt-1 text-sm text-gray-500">Kegiatan yang akan datang</p>
+          </div>
+          <div class="h-16 w-16 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center">
+            <BookOpen class="w-8 h-8" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SUPER ADMIN ONLY: System Health -->
+    <div v-if="isSuperAdmin" class="space-y-4">
+      <div class="flex items-center text-gray-800">
+        <Server class="w-6 h-6 mr-2 text-gray-600" />
+        <h2 class="text-xl font-bold">Status Sistem (Admin)</h2>
+      </div>
+      <div class="rounded-2xl border border-gray-200 bg-gray-50 p-6 shadow-inner flex flex-wrap items-center gap-8 text-sm">
+        <div class="flex items-center gap-2">
+          <div :class="['w-3 h-3 rounded-full', metrics?.system.db_status === 'Healthy' ? 'bg-green-500 animate-pulse' : 'bg-red-500']"></div>
+          <span class="text-gray-600">Database: <span class="font-semibold text-gray-900">{{ metrics?.system.db_status || 'Unknown' }}</span></span>
+        </div>
+        <div class="flex items-center gap-2">
+          <Activity class="w-4 h-4 text-gray-400" />
+          <span class="text-gray-600">Uptime: <span class="font-semibold text-gray-900">{{ metrics?.system.uptime || '0%' }}</span></span>
+        </div>
+        <div class="flex items-center gap-2">
+          <Users class="w-4 h-4 text-gray-400" />
+          <span class="text-gray-600">Active Sessions: <span class="font-semibold text-gray-900">{{ metrics?.system.active_sessions || 0 }}</span></span>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
+
+<style scoped>
+/* Minor animation utility since tailwind-animate is not installed by default */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+</style>

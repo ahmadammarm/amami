@@ -85,12 +85,16 @@ type Transaction struct {
 
 type ZakatDonation struct {
 	ID            uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	TransactionID uuid.UUID      `gorm:"type:uuid;uniqueIndex;not null"`
-	Transaction   Transaction    `gorm:"constraint:OnDelete:RESTRICT;"`
+	TransactionID *uuid.UUID     `gorm:"type:uuid;index"`
+	Transaction   *Transaction   `gorm:"constraint:OnDelete:RESTRICT;"`
 	MuzakkiID     uuid.UUID      `gorm:"type:uuid;index;not null"`
 	Muzakki       Jamaah         `gorm:"foreignKey:MuzakkiID;constraint:OnDelete:RESTRICT;"`
 	ZakatType     string         `gorm:"type:varchar(30);not null"`
+	AmountOrQty   float64        `gorm:"type:decimal(12,2);not null;default:0"`
+	Unit          string         `gorm:"type:varchar(20);default:'IDR'"` // IDR, KG, LITER
+	Description   string         `gorm:"type:text"`
 	Metadata      datatypes.JSON `gorm:"type:jsonb"`
+	CreatedAt     time.Time      `gorm:"default:now()"`
 }
 
 type MustahikData struct {
@@ -106,11 +110,13 @@ type MustahikData struct {
 
 type ZakatDistribution struct {
 	ID            uuid.UUID   `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	TransactionID uuid.UUID   `gorm:"type:uuid;uniqueIndex;not null"`
-	Transaction   Transaction `gorm:"constraint:OnDelete:RESTRICT;"`
+	TransactionID *uuid.UUID  `gorm:"type:uuid;index"`
+	Transaction   *Transaction `gorm:"constraint:OnDelete:RESTRICT;"`
 	MustahikID    uuid.UUID   `gorm:"type:uuid;index;not null"`
 	Mustahik      Jamaah      `gorm:"foreignKey:MustahikID;constraint:OnDelete:RESTRICT;"`
-	Amount        int64       `gorm:"type:bigint;not null"`
+	AmountOrQty   float64     `gorm:"type:decimal(12,2);not null;default:0"`
+	Unit          string      `gorm:"type:varchar(20);default:'IDR'"`
+	Description   string      `gorm:"type:text"`
 	DistributedAt time.Time   `gorm:"default:now()"`
 }
 

@@ -89,6 +89,43 @@ func main() {
 				protected.GET("/audit", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.GetAuditLogs)
 			}
 		}
+
+		// Finance Module
+		finance := v1.Group("/finance", middleware.RequireAuth(), middleware.RejectScope(utils.ScopePasswordReset))
+		{
+			// Read-only for roles with ledger:read
+			finance.GET("/funds", middleware.RequirePermission(config.RoleRepo, "ledger:read"), config.FinanceHandler.Handler.GetFunds)
+			finance.GET("/transactions", middleware.RequirePermission(config.RoleRepo, "ledger:read"), config.FinanceHandler.Handler.GetTransactions)
+			
+			// Write-only for roles with ledger:write (Bendahara/SuperAdmin)
+			finance.POST("/funds", middleware.RequirePermission(config.RoleRepo, "ledger:write"), config.FinanceHandler.Handler.CreateFund)
+			finance.POST("/transactions", middleware.RequirePermission(config.RoleRepo, "ledger:write"), config.FinanceHandler.Handler.CreateTransaction)
+		}
+
+		// Dashboard Module
+		dashboard := v1.Group("/dashboard", middleware.RequireAuth())
+		{
+			// Read-only for authenticated users
+			dashboard.GET("/metrics", config.DashboardHandler.Handler.GetMetrics)
+		}
+
+		// Jamaah Module
+		jamaah := v1.Group("/jamaah", middleware.RequireAuth())
+		{
+			jamaah.GET("", middleware.RequirePermission(config.RoleRepo, "jamaah:manage"), config.JamaahHandler.Handler.GetJamaahs)
+			jamaah.GET("/:id", middleware.RequirePermission(config.RoleRepo, "jamaah:manage"), config.JamaahHandler.Handler.GetJamaahByID)
+			jamaah.POST("", middleware.RequirePermission(config.RoleRepo, "jamaah:manage"), config.JamaahHandler.Handler.CreateJamaah)
+			jamaah.PUT("/:id", middleware.RequirePermission(config.RoleRepo, "jamaah:manage"), config.JamaahHandler.Handler.UpdateJamaah)
+		}
+
+		// Zakat Module
+		zakat := v1.Group("/zakat", middleware.RequireAuth())
+		{
+			zakat.GET("/donations", middleware.RequirePermission(config.RoleRepo, "zakat:manage"), config.ZakatHandler.Handler.GetDonations)
+			zakat.GET("/distributions", middleware.RequirePermission(config.RoleRepo, "zakat:manage"), config.ZakatHandler.Handler.GetDistributions)
+			zakat.POST("/donations", middleware.RequirePermission(config.RoleRepo, "zakat:manage"), config.ZakatHandler.Handler.CollectZakat)
+			zakat.POST("/distributions", middleware.RequirePermission(config.RoleRepo, "zakat:manage"), config.ZakatHandler.Handler.DistributeZakat)
+		}
 	}
 
 	appAddr := fmt.Sprintf(":%s", config.AppConfig.AppPort)

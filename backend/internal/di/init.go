@@ -5,6 +5,10 @@ import (
 	authRepo "github.com/ahmadammarm/amami/backend/internal/repository/auth"
 	authSvc "github.com/ahmadammarm/amami/backend/internal/service/auth"
 	userModule "github.com/ahmadammarm/amami/backend/internal/di/user"
+	dashboardModule "github.com/ahmadammarm/amami/backend/internal/di/dashboard"
+	jamaahModule "github.com/ahmadammarm/amami/backend/internal/di/jamaah"
+	financeModule "github.com/ahmadammarm/amami/backend/internal/di/finance"
+	zakatModule "github.com/ahmadammarm/amami/backend/internal/di/zakat"
 	settingsModule "github.com/ahmadammarm/amami/backend/internal/di/settings"
 	"github.com/ahmadammarm/amami/backend/pkg/config"
 	"github.com/ahmadammarm/amami/backend/pkg/database"
@@ -14,9 +18,13 @@ import (
 type Config struct {
 	AuthHandler     authHandler.AuthHandler
 	UserHandler     userModule.Module
-	SettingsHandler settingsModule.Module
-	RoleRepo        authRepo.RoleRepository
-	DB              *gorm.DB
+	SettingsHandler  settingsModule.Module
+	FinanceHandler   financeModule.Module
+	DashboardHandler dashboardModule.Module
+	JamaahHandler    jamaahModule.Module
+	ZakatHandler     zakatModule.Module
+	RoleRepo         authRepo.RoleRepository
+	DB               *gorm.DB
 	AppConfig       *config.Config
 }
 
@@ -38,12 +46,28 @@ func Initialize() (*Config, error) {
 	// Settings Module
 	settingsMod := settingsModule.NewModule(db)
 
+	// Finance Module
+	financeMod := financeModule.NewModule(db)
+
+	// Dashboard Module
+	dashboardMod := dashboardModule.NewModule(db)
+
+	// Jamaah Module
+	jamaahMod := jamaahModule.NewModule(db)
+
+	// Zakat Module
+	zakatMod := zakatModule.NewModule(db)
+
 	return &Config{
-		AuthHandler:     authH,
-		UserHandler:     *userMod,
-		SettingsHandler: *settingsMod,
-		RoleRepo:        roleRepo,
-		DB:              db,
-		AppConfig:       cfg,
+		AuthHandler:      authH,
+		UserHandler:      *userMod,
+		SettingsHandler:  *settingsMod,
+		FinanceHandler:   *financeMod,
+		DashboardHandler: *dashboardMod,
+		JamaahHandler:    *jamaahMod,
+		ZakatHandler:     *zakatMod,
+		RoleRepo:         roleRepo,
+		DB:               db,
+		AppConfig:        cfg,
 	}, nil
 }
