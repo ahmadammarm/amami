@@ -8,9 +8,8 @@ import {
   getSystemHealth,
   getAuditLogs
 } from '../api/services/settings';
-import { getErrorMessage } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
-import { toast } from 'vue-sonner';
+import { feedback } from './useFeedback';
 import { computed, type MaybeRef, unref } from 'vue';
 
 export const useMosqueProfileQuery = () => {
@@ -21,6 +20,7 @@ export const useMosqueProfileQuery = () => {
   });
 };
 
+/** The page shows its own success dialog; only failures are reported here. */
 export const useUpdateMosqueProfile = () => {
   const queryClient = useQueryClient();
 
@@ -28,10 +28,9 @@ export const useUpdateMosqueProfile = () => {
     mutationFn: updateMosqueProfile,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.settings.profile });
-      toast.success('Profile updated successfully');
     },
     onError: (error: unknown) => {
-      toast.error(getErrorMessage(error, 'Failed to update profile'));
+      feedback.error('Profil masjid belum disimpan', error);
     },
   });
 };
@@ -49,10 +48,10 @@ export const useUpdateSMTPMutation = () => {
     mutationFn: updateSMTPConfig,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.settings.smtp });
-      toast.success('SMTP configuration updated successfully');
+      feedback.success('Pengaturan email tersimpan');
     },
     onError: (error: unknown) => {
-      toast.error(getErrorMessage(error, 'Failed to update SMTP configuration'));
+      feedback.error('Pengaturan email belum disimpan', error);
     },
   });
 };
@@ -61,10 +60,10 @@ export const useTestSMTPMutation = () => {
   return useMutation({
     mutationFn: testSMTPConnection,
     onSuccess: () => {
-      toast.success('SMTP connection successful');
+      feedback.success('Koneksi email berhasil', 'Server SMTP dapat dihubungi dengan pengaturan ini.');
     },
     onError: (error: unknown) => {
-      toast.error(getErrorMessage(error, 'SMTP connection failed'));
+      feedback.error('Koneksi email gagal', error);
     },
   });
 };

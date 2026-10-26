@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query';
-import { toast } from 'vue-sonner';
+import { feedback } from '../../composables/useFeedback';
 import { FileText, Trash2, UploadCloud, XIcon } from 'lucide-vue-next';
 import { agendaService } from '../../api/services/agenda';
-import { assetUrl, getErrorMessage } from '../../api/client';
+import { assetUrl } from '../../api/client';
 import { queryKeys } from '../../api/queryKeys';
 import {
   DOCUMENTATION_ACCEPT,
@@ -35,19 +35,19 @@ const { data: documents, isLoading } = useQuery({
 const uploadMutation = useMutation({
   mutationFn: (files: File[]) => agendaService.uploadDocumentation(props.agenda.id, files),
   onSuccess: (uploaded) => {
-    toast.success(`${uploaded.length} file berhasil diunggah`);
+    feedback.success('Dokumentasi diunggah', `${uploaded.length} file ditambahkan ke ${props.agenda.title}.`);
     queryClient.invalidateQueries({ queryKey: docsKey.value });
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal mengunggah dokumentasi')),
+  onError: (error: unknown) => feedback.error('Dokumentasi belum diunggah', error),
 });
 
 const deleteMutation = useMutation({
   mutationFn: (doc: AgendaDocumentation) => agendaService.deleteDocumentation(props.agenda.id, doc.id),
   onSuccess: () => {
-    toast.success('Dokumentasi dihapus');
+    feedback.success('Dokumentasi dihapus');
     queryClient.invalidateQueries({ queryKey: docsKey.value });
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal menghapus dokumentasi')),
+  onError: (error: unknown) => feedback.error('Dokumentasi belum dihapus', error),
 });
 
 /** Client-side pre-check mirroring the server rules, for faster feedback. */
@@ -70,16 +70,20 @@ const onFilesSelected = (event: Event) => {
 
   const problem = validateFiles(files);
   if (problem) {
-    toast.error(problem);
+    feedback.error('File tidak dapat diunggah', problem);
     return;
   }
   uploadMutation.mutate(files);
 };
 
-const confirmDelete = (doc: AgendaDocumentation) => {
-  if (window.confirm(`Hapus ${doc.file_name}?`)) {
-    deleteMutation.mutate(doc);
-  }
+const confirmDelete = async (doc: AgendaDocumentation) => {
+  const confirmed = await feedback.confirm({
+    title: 'Hapus dokumentasi?',
+    message: `${doc.file_name} akan dihapus permanen dari arsip kegiatan.`,
+    confirmLabel: 'Hapus',
+    danger: true,
+  });
+  if (confirmed) deleteMutation.mutate(doc);
 };
 
 const isImage = (doc: AgendaDocumentation) => doc.file_type.startsWith('image/');

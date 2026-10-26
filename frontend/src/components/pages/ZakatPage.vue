@@ -5,12 +5,11 @@ import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/zod';
 import { zakatService } from '@/api/services/zakat';
 import { financeService } from '@/api/services/finance';
-import { getErrorMessage } from '@/api/client';
+import { feedback } from '@/composables/useFeedback';
 import { queryKeys } from '@/api/queryKeys';
 import { useAuthStore } from '@/stores/auth';
 import { Permission } from '@/lib/permissions';
 import { collectZakatSchema, distributeZakatSchema } from '@/schemas/zakat';
-import { toast } from 'vue-sonner';
 import { HeartHandshake, ArrowDown, ArrowUp } from 'lucide-vue-next';
 import AsyncJamaahSelect from '../molecules/AsyncJamaahSelect.vue';
 
@@ -106,21 +105,21 @@ const refreshAfterZakat = () => {
 const collectMutation = useMutation({
   mutationFn: zakatService.collectZakat,
   onSuccess: () => {
-    toast.success('Zakat collected successfully!');
+    feedback.success('Penerimaan zakat tercatat');
     refreshAfterZakat();
     closeCollectDialog();
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Failed to collect zakat')),
+  onError: (error: unknown) => feedback.error('Penerimaan zakat belum tercatat', error),
 });
 
 const distributeMutation = useMutation({
   mutationFn: zakatService.distributeZakat,
   onSuccess: () => {
-    toast.success('Zakat distributed successfully!');
+    feedback.success('Penyaluran zakat tercatat');
     refreshAfterZakat();
     closeDistributeDialog();
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Failed to distribute zakat')),
+  onError: (error: unknown) => feedback.error('Penyaluran zakat belum tercatat', error),
 });
 
 const submitCollect = handleCollectSubmit((values) => collectMutation.mutate(values));

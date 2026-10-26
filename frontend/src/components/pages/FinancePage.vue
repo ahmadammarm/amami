@@ -4,13 +4,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
 import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/zod';
 import { financeService } from '@/api/services/finance';
-import { getErrorMessage } from '@/api/client';
+import { feedback } from '@/composables/useFeedback';
 import { queryKeys } from '@/api/queryKeys';
 import { useAuthStore } from '@/stores/auth';
 import { Permission } from '@/lib/permissions';
 import { reversalSchema, transactionSchema } from '@/schemas/finance';
 import type { Transaction } from '@/types/finance';
-import { toast } from 'vue-sonner';
 
 const authStore = useAuthStore();
 const queryClient = useQueryClient();
@@ -89,25 +88,25 @@ const refreshLedger = () => {
 const createTxMutation = useMutation({
   mutationFn: financeService.createTransaction,
   onSuccess: () => {
-    toast.success('Transaction added successfully!');
+    feedback.success('Transaksi tersimpan');
     refreshLedger();
     showAddForm.value = false;
     resetTransactionForm();
   },
   onError: (error: unknown) => {
-    toast.error(getErrorMessage(error, 'Failed to process transaction'));
+    feedback.error('Transaksi belum tersimpan', error);
   },
 });
 
 const reverseTxMutation = useMutation({
   mutationFn: ({ id, reason }: { id: string; reason: string }) => financeService.reverseTransaction(id, { reason }),
   onSuccess: () => {
-    toast.success('Reversal entry recorded');
+    feedback.success('Transaksi dibatalkan', 'Entri pembalik sudah dicatat dan saldo kas disesuaikan.');
     refreshLedger();
     closeDetail();
   },
   onError: (error: unknown) => {
-    toast.error(getErrorMessage(error, 'Failed to reverse transaction'));
+    feedback.error('Transaksi belum dibatalkan', error);
   },
 });
 

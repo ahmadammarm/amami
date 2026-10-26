@@ -3,9 +3,8 @@ import { computed, watch } from 'vue';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query';
 import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/zod';
-import { toast } from 'vue-sonner';
+import { feedback } from '../../composables/useFeedback';
 import { jamaahService } from '../../api/services/jamaah';
-import { getErrorMessage } from '../../api/client';
 import { queryKeys } from '../../api/queryKeys';
 import { mustahikSurveySchema, type MustahikSurveyPayload } from '../../schemas/jamaah';
 import { houseStatusLabels, scoreBadgeClass, scoreLevel } from '../../lib/mustahik';
@@ -65,12 +64,12 @@ const currentScore = computed(() => existingSurvey.value?.mustahik_score ?? prop
 const submitMutation = useMutation({
   mutationFn: (payload: MustahikSurveyPayload) => jamaahService.submitSurvey(props.jamaah.id, payload),
   onSuccess: (survey) => {
-    toast.success(`Survei tersimpan. Skor kemiskinan: ${survey.mustahik_score}`);
+    feedback.success('Survei tersimpan', `Skor kemiskinan ${props.jamaah.full_name} kini ${survey.mustahik_score.toFixed(2)} dari 100.`);
     queryClient.invalidateQueries({ queryKey: queryKeys.jamaah.all });
     emit('close');
   },
   onError: (error: unknown) => {
-    toast.error(getErrorMessage(error, 'Gagal menyimpan survei'));
+    feedback.error('Survei belum disimpan', error);
   },
 });
 

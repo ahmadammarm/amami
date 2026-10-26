@@ -4,14 +4,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
 import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/zod';
 import { inventoryService } from '../../api/services/inventory';
-import { getErrorMessage } from '../../api/client';
+import { feedback } from '../../composables/useFeedback';
 import { queryKeys } from '../../api/queryKeys';
 import { useAuthStore } from '../../stores/auth';
 import { Permission } from '../../lib/permissions';
 import { assetSchema, toAssetPayload, type AssetFormValues, type AssetPayload } from '../../schemas/inventory';
 import type { Asset, AssetStatus } from '../../types/inventory';
 import { PlusIcon, XIcon, TrashIcon, BoxIcon, EditIcon, CheckCircleIcon, WrenchIcon, AlertTriangleIcon, RepeatIcon } from 'lucide-vue-next';
-import { toast } from 'vue-sonner';
 
 const authStore = useAuthStore();
 const queryClient = useQueryClient();
@@ -68,30 +67,30 @@ const refreshAssets = () => {
 const createMutation = useMutation({
   mutationFn: inventoryService.createAsset,
   onSuccess: () => {
-    toast.success('Aset berhasil ditambahkan');
+    feedback.success('Aset ditambahkan');
     refreshAssets();
     closeDialog();
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal menambahkan aset'))
+  onError: (error: unknown) => feedback.error('Aset belum ditambahkan', error)
 });
 
 const updateMutation = useMutation({
   mutationFn: ({ id, payload }: { id: string, payload: AssetPayload }) => inventoryService.updateAsset(id, payload),
   onSuccess: () => {
-    toast.success('Aset berhasil diperbarui');
+    feedback.success('Aset diperbarui');
     refreshAssets();
     closeDialog();
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal memperbarui aset'))
+  onError: (error: unknown) => feedback.error('Aset belum diperbarui', error)
 });
 
 const deleteMutation = useMutation({
   mutationFn: inventoryService.deleteAsset,
   onSuccess: () => {
-    toast.success('Aset berhasil dihapus');
+    feedback.success('Aset dihapus');
     refreshAssets();
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal menghapus aset'))
+  onError: (error: unknown) => feedback.error('Aset belum dihapus', error)
 });
 
 const isSaving = computed(() => createMutation.isPending.value || updateMutation.isPending.value);
@@ -131,10 +130,14 @@ const submitAsset = handleSubmit((values) => {
   }
 });
 
-const confirmDelete = (asset: Asset) => {
-  if (window.confirm(`Hapus aset "${asset.name}" (${asset.sku})?`)) {
-    deleteMutation.mutate(asset.id);
-  }
+const confirmDelete = async (asset: Asset) => {
+  const confirmed = await feedback.confirm({
+    title: 'Hapus aset?',
+    message: `${asset.name} (${asset.sku}) akan dihapus dari daftar aset. Riwayat peminjamannya tetap tersimpan.`,
+    confirmLabel: 'Hapus aset',
+    danger: true,
+  });
+  if (confirmed) deleteMutation.mutate(asset.id);
 };
 
 const formatCurrency = (amount: number) => {

@@ -6,8 +6,7 @@ import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/zod';
 import * as zod from 'zod';
 import { Lock, Loader2, ShieldAlert } from 'lucide-vue-next';
-import { toast } from 'vue-sonner';
-import axios from 'axios';
+import { feedback } from '../../composables/useFeedback';
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -34,14 +33,10 @@ const onSubmit = handleSubmit(async (values) => {
   isLoading.value = true;
   try {
     await authStore.changePassword(values.password);
-    toast.success('Password changed successfully. Welcome to amami!');
     router.push({ name: 'Dashboard' });
+    feedback.success('Password diperbarui', 'Selamat datang di amami.');
   } catch (error) {
-    let message = 'Failed to change password';
-    if (axios.isAxiosError(error)) {
-      message = error.response?.data?.message || message;
-    }
-    toast.error(message);
+    feedback.error('Password belum diperbarui', error);
   } finally {
     isLoading.value = false;
   }
@@ -110,7 +105,7 @@ const handleLogout = () => {
             <Loader2 v-if="isLoading" class="w-5 h-5 animate-spin" />
             {{ isLoading ? 'Updating Password...' : 'Update Password' }}
           </button>
-          
+
           <button
             @click="handleLogout"
             type="button"

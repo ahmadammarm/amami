@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
 import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/zod';
 import { qurbanService } from '../../api/services/qurban';
-import { getErrorMessage } from '../../api/client';
+import { feedback } from '../../composables/useFeedback';
 import { queryKeys } from '../../api/queryKeys';
 import { useAuthStore } from '../../stores/auth';
 import { Permission } from '../../lib/permissions';
@@ -19,7 +19,6 @@ import {
 import type { QurbanAnimal, QurbanPackage } from '../../types/qurban';
 import AsyncJamaahSelect from '../molecules/AsyncJamaahSelect.vue';
 import { PlusIcon, XIcon, TrashIcon, EditIcon, PackageIcon, UsersIcon, DogIcon } from 'lucide-vue-next';
-import { toast } from 'vue-sonner';
 
 type TabId = 'packages' | 'bookings' | 'animals';
 
@@ -118,71 +117,71 @@ const selectedPackagePrice = computed(
 const createPackageMutation = useMutation({
   mutationFn: qurbanService.createPackage,
   onSuccess: () => {
-    toast.success('Paket berhasil dibuat');
+    feedback.success('Paket ditambahkan');
     refreshQurban();
     closePackageDialog();
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal membuat paket'))
+  onError: (error: unknown) => feedback.error('Paket belum ditambahkan', error)
 });
 
 const updatePackageMutation = useMutation({
   mutationFn: ({ id, payload }: { id: number, payload: PackagePayload }) => qurbanService.updatePackage(id, payload),
   onSuccess: () => {
-    toast.success('Paket diperbarui');
+    feedback.success('Paket diperbarui');
     refreshQurban();
     closePackageDialog();
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal memperbarui paket'))
+  onError: (error: unknown) => feedback.error('Paket belum diperbarui', error)
 });
 
 const deletePackageMutation = useMutation({
   mutationFn: qurbanService.deletePackage,
   onSuccess: () => {
-    toast.success('Paket dihapus');
+    feedback.success('Paket dihapus');
     refreshQurban();
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal menghapus paket'))
+  onError: (error: unknown) => feedback.error('Paket belum dihapus', error)
 });
 
 // Animal Mutations
 const createAnimalMutation = useMutation({
   mutationFn: qurbanService.createAnimal,
   onSuccess: () => {
-    toast.success('Hewan berhasil didata');
+    feedback.success('Hewan ditambahkan');
     refreshQurban();
     closeAnimalDialog();
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal mendata hewan'))
+  onError: (error: unknown) => feedback.error('Hewan belum ditambahkan', error)
 });
 
 const updateAnimalMutation = useMutation({
   mutationFn: ({ id, payload }: { id: string, payload: AnimalPayload }) => qurbanService.updateAnimal(id, payload),
   onSuccess: () => {
-    toast.success('Data hewan diperbarui');
+    feedback.success('Data hewan diperbarui');
     refreshQurban();
     closeAnimalDialog();
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal memperbarui data hewan'))
+  onError: (error: unknown) => feedback.error('Data hewan belum diperbarui', error)
 });
 
 const deleteAnimalMutation = useMutation({
   mutationFn: qurbanService.deleteAnimal,
   onSuccess: () => {
-    toast.success('Data hewan dihapus');
+    feedback.success('Data hewan dihapus');
     refreshQurban();
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal menghapus data hewan'))
+  onError: (error: unknown) => feedback.error('Data hewan belum dihapus', error)
 });
 
 // Booking Mutation
 const createBookingMutation = useMutation({
   mutationFn: qurbanService.createBooking,
   onSuccess: (booking) => {
-    toast.success(`Pendaftaran ${booking.shohibul_name} berhasil`);
+    feedback.success('Shohibul terdaftar', `${booking.shohibul_name} terdaftar untuk paket ${booking.package_name}.`);
     refreshQurban();
     closeBookingDialog();
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal mendaftarkan shohibul'))
+  onError: (error: unknown) => feedback.error('Shohibul belum terdaftar', error)
 });
 
 const isSavingPackage = computed(() => createPackageMutation.isPending.value || updatePackageMutation.isPending.value);
@@ -219,8 +218,14 @@ const submitPackage = handlePackageSubmit((values) => {
   }
 });
 
-const confirmDeletePackage = (pkg: QurbanPackage) => {
-  if (window.confirm(`Hapus paket "${pkg.name}"?`)) deletePackageMutation.mutate(pkg.id);
+const confirmDeletePackage = async (pkg: QurbanPackage) => {
+  const confirmed = await feedback.confirm({
+    title: 'Hapus paket?',
+    message: `${pkg.name} tidak bisa dipilih lagi untuk pendaftaran baru. Pendaftaran yang sudah ada tetap tersimpan.`,
+    confirmLabel: 'Hapus paket',
+    danger: true,
+  });
+  if (confirmed) deletePackageMutation.mutate(pkg.id);
 };
 
 const openAnimalDialog = () => {
@@ -253,8 +258,14 @@ const submitAnimal = handleAnimalSubmit((values) => {
   }
 });
 
-const confirmDeleteAnimal = (animal: QurbanAnimal) => {
-  if (window.confirm(`Hapus data hewan ${animal.tag_number}?`)) deleteAnimalMutation.mutate(animal.id);
+const confirmDeleteAnimal = async (animal: QurbanAnimal) => {
+  const confirmed = await feedback.confirm({
+    title: 'Hapus data hewan?',
+    message: `Hewan dengan tag ${animal.tag_number} akan dihapus dari daftar.`,
+    confirmLabel: 'Hapus hewan',
+    danger: true,
+  });
+  if (confirmed) deleteAnimalMutation.mutate(animal.id);
 };
 
 const openBookingDialog = () => {

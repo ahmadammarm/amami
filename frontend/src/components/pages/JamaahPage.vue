@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
 import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/zod';
 import { jamaahService } from '@/api/services/jamaah';
-import { getErrorMessage } from '@/api/client';
+import { feedback } from '@/composables/useFeedback';
 import { queryKeys } from '@/api/queryKeys';
 import { useAuthStore } from '@/stores/auth';
 import { Permission } from '@/lib/permissions';
@@ -12,7 +12,6 @@ import { scoreBadgeClass, scoreLevel } from '@/lib/mustahik';
 import { jamaahSchema, type JamaahPayload } from '@/schemas/jamaah';
 import type { Jamaah, JamaahListParams, JamaahSort } from '@/types/jamaah';
 import MustahikSurveyDialog from '@/components/molecules/MustahikSurveyDialog.vue';
-import { toast } from 'vue-sonner';
 import { Users, Search, Plus, Edit2, ShieldAlert, ClipboardList } from 'lucide-vue-next';
 import { RecycleScroller } from 'vue-virtual-scroller';
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
@@ -83,7 +82,7 @@ const openEditDialog = (j: Jamaah) => {
 };
 
 const onSaved = (message: string) => {
-  toast.success(message);
+  feedback.success(message);
   queryClient.invalidateQueries({ queryKey: queryKeys.jamaah.all });
   showDialog.value = false;
 };
@@ -91,14 +90,14 @@ const onSaved = (message: string) => {
 // Mutations
 const createMutation = useMutation({
   mutationFn: jamaahService.createJamaah,
-  onSuccess: () => onSaved('Jamaah registered successfully!'),
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Failed to register jamaah')),
+  onSuccess: () => onSaved('Jamaah terdaftar'),
+  onError: (error: unknown) => feedback.error('Jamaah belum terdaftar', error),
 });
 
 const updateMutation = useMutation({
   mutationFn: (payload: { id: string; data: JamaahPayload }) => jamaahService.updateJamaah(payload.id, payload.data),
-  onSuccess: () => onSaved('Jamaah updated successfully!'),
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Failed to update jamaah')),
+  onSuccess: () => onSaved('Data jamaah diperbarui'),
+  onError: (error: unknown) => feedback.error('Data jamaah belum diperbarui', error),
 });
 
 const isSaving = computed(() => createMutation.isPending.value || updateMutation.isPending.value);

@@ -1,29 +1,36 @@
-
 @import "tailwindcss";
 
+/* Light theme only: `dark:` utilities in the shadcn atoms apply only under an
+   explicit .dark ancestor (never set), not when the OS is in dark mode. */
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * amami design tokens. The palette comes from the materials of an Indonesian
+ * mosque: lime-plaster walls (kapur), terrazzo floor (batu), teak pulpit (jati),
+ * prayer carpet (sajadah), brass finial (kuningan) and brick (bata).
+ * Light theme only.
+ */
 @theme inline {
-  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-  --font-heading: var(--font-sans);
-  
-  /* Primary Green Theme */
-  --color-primary: oklch(0.627 0.194 149.214);
-  --color-primary-foreground: oklch(0.985 0.001 106.423);
-  
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Reem Kufi", "Plus Jakarta Sans", ui-sans-serif, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-heading: var(--font-display);
+
+  --color-kapur: #f5f6f2;
+  --color-batu: #e4e7e1;
+  --color-batu-tua: #cbd1c9;
+  --color-jati: #2b211b;
+  --color-jati-muda: #6b6158;
+  --color-sajadah: #2d6a57;
+  --color-sajadah-tua: #1f4d3f;
+  --color-sajadah-muda: #e6efeb;
+  --color-kuningan: #b08a3e;
+  --color-kuningan-muda: #f4ecdb;
+  --color-bata: #a8412f;
+  --color-bata-muda: #f6e4e0;
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -40,88 +47,97 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  
-  --radius-lg: 0.5rem; /* rounded-lg */
-  --radius-md: calc(var(--radius-lg) - 2px);
-  --radius-sm: calc(var(--radius-lg) - 4px);
-  --radius-xl: calc(var(--radius-lg) + 4px);
-  
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  --shadow-sm: 0 1px 2px rgb(43 33 27 / 0.06);
+  --shadow-md: 0 6px 18px -8px rgb(43 33 27 / 0.18);
+  --shadow-lg: 0 18px 40px -16px rgb(43 33 27 / 0.28);
 }
 
+/* shadcn-vue semantic variables, mapped onto the palette above. */
 :root {
-  --radius: 0.5rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.147 0.004 49.25);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.147 0.004 49.25);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.147 0.004 49.25);
-  --primary: oklch(0.627 0.194 149.214);
-  --primary-foreground: oklch(0.985 0.001 106.423);
-  --secondary: oklch(0.97 0.001 106.424);
-  --secondary-foreground: oklch(0.216 0.006 56.043);
-  --muted: oklch(0.97 0.001 106.424);
-  --muted-foreground: oklch(0.553 0.013 58.071);
-  --accent: oklch(0.97 0.001 106.424);
-  --accent-foreground: oklch(0.216 0.006 56.043);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.923 0.003 48.717);
-  --input: oklch(0.923 0.003 48.717);
-  --ring: oklch(0.627 0.194 149.214 / 0.5);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0.001 106.423);
-  --sidebar-foreground: oklch(0.147 0.004 49.25);
-  --sidebar-primary: oklch(0.627 0.194 149.214);
-  --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-accent: oklch(0.97 0.001 106.424);
-  --sidebar-accent-foreground: oklch(0.627 0.194 149.214);
-  --sidebar-border: oklch(0.923 0.003 48.717);
-  --sidebar-ring: oklch(0.627 0.194 149.214 / 0.5);
+  --radius: 0.75rem;
+  --background: #f5f6f2;
+  --foreground: #2b211b;
+  --card: #ffffff;
+  --card-foreground: #2b211b;
+  --popover: #ffffff;
+  --popover-foreground: #2b211b;
+  --primary: #2d6a57;
+  --primary-foreground: #ffffff;
+  --secondary: #e6efeb;
+  --secondary-foreground: #1f4d3f;
+  --muted: #eef0eb;
+  --muted-foreground: #6b6158;
+  --accent: #e6efeb;
+  --accent-foreground: #1f4d3f;
+  --destructive: #a8412f;
+  --border: #e4e7e1;
+  --input: #cbd1c9;
+  --ring: #b08a3e;
 }
 
-* {
-  @apply border-border outline-ring/50;
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+
+  /* Rupiah amounts and counts line up in columns. */
+  table,
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-kuningan);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--color-kuningan-muda);
+    color: var(--color-jati);
+  }
 }
 
-body {
-  @apply bg-background text-foreground;
+@layer components {
+  /* Prayer-row rules: the hairline that separates list rows, like the lines of a shaf. */
+  .shaf > * + * {
+    border-top: 1px solid var(--color-batu);
+  }
+
+  /* Shared look for native inputs, selects and textareas. */
+  .field-control {
+    @apply block w-full rounded-lg border border-batu-tua bg-white px-3 py-2.5 text-sm text-jati
+      shadow-sm transition-colors placeholder:text-jati-muda/60
+      hover:border-jati-muda/40 focus:border-sajadah focus:outline-none focus:ring-2 focus:ring-sajadah/15
+      disabled:cursor-not-allowed disabled:bg-kapur disabled:text-jati-muda;
+  }
+
+  .field-control[aria-invalid='true'] {
+    @apply border-bata focus:border-bata focus:ring-bata/15;
+  }
 }
 
-.dark {
-  --background: oklch(0.147 0.004 49.25);
-  --foreground: oklch(0.985 0.001 106.423);
-  --card: oklch(0.216 0.006 56.043);
-  --card-foreground: oklch(0.985 0.001 106.423);
-  --popover: oklch(0.216 0.006 56.043);
-  --popover-foreground: oklch(0.985 0.001 106.423);
-  --primary: oklch(0.7 0.15 149.214);
-  --primary-foreground: oklch(0.216 0.006 56.043);
-  --secondary: oklch(0.268 0.007 34.298);
-  --secondary-foreground: oklch(0.985 0.001 106.423);
-  --muted: oklch(0.268 0.007 34.298);
-  --muted-foreground: oklch(0.709 0.01 56.259);
-  --accent: oklch(0.268 0.007 34.298);
-  --accent-foreground: oklch(0.985 0.001 106.423);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.7 0.15 149.214 / 0.5);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.216 0.006 56.043);
-  --sidebar-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-primary: oklch(0.7 0.15 149.214);
-  --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-accent: oklch(0.268 0.007 34.298);
-  --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.7 0.15 149.214 / 0.5);
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

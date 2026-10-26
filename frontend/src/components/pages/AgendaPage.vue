@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
 import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/zod';
 import { agendaService } from '../../api/services/agenda';
-import { getErrorMessage } from '../../api/client';
+import { feedback } from '../../composables/useFeedback';
 import { queryKeys } from '../../api/queryKeys';
 import { useAuthStore } from '../../stores/auth';
 import { Permission } from '../../lib/permissions';
@@ -22,7 +22,6 @@ import {
   AlertDialogTitle,
 } from '../atoms/alert-dialog';
 import { PlusIcon, XIcon, CalendarIcon, ClockIcon, MapPinIcon, EditIcon, Trash2Icon, ImagesIcon } from 'lucide-vue-next';
-import { toast } from 'vue-sonner';
 
 const authStore = useAuthStore();
 const queryClient = useQueryClient();
@@ -65,31 +64,31 @@ const refreshAgendas = () => queryClient.invalidateQueries({ queryKey: queryKeys
 const createMutation = useMutation({
   mutationFn: agendaService.createAgenda,
   onSuccess: () => {
-    toast.success('Agenda berhasil ditambahkan');
+    feedback.success('Agenda ditambahkan');
     refreshAgendas();
     closeDialog();
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal menambahkan agenda'))
+  onError: (error: unknown) => feedback.error('Agenda belum ditambahkan', error)
 });
 
 const updateMutation = useMutation({
   mutationFn: ({ id, payload }: { id: string, payload: AgendaPayload }) => agendaService.updateAgenda(id, payload),
   onSuccess: () => {
-    toast.success('Agenda berhasil diperbarui');
+    feedback.success('Agenda diperbarui');
     refreshAgendas();
     closeDialog();
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal memperbarui agenda'))
+  onError: (error: unknown) => feedback.error('Agenda belum diperbarui', error)
 });
 
 const deleteMutation = useMutation({
   mutationFn: (id: string) => agendaService.deleteAgenda(id),
   onSuccess: () => {
-    toast.success('Agenda berhasil dihapus');
+    feedback.success('Agenda dihapus');
     refreshAgendas();
     deleteTarget.value = null;
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal menghapus agenda'))
+  onError: (error: unknown) => feedback.error('Agenda belum dihapus', error)
 });
 
 const isSaving = computed(() => createMutation.isPending.value || updateMutation.isPending.value);

@@ -2,13 +2,13 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../../stores/auth';
-import { getErrorMessage, request } from '../../api/client';
+import { request } from '../../api/client';
+import { feedback } from '../../composables/useFeedback';
 import type { LoginResponse } from '../../types/auth';
 import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/zod';
 import * as zod from 'zod';
 import { Lock, Mail, Loader2 } from 'lucide-vue-next';
-import { toast } from 'vue-sonner';
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -47,7 +47,7 @@ const onSubmit = handleSubmit(async (values) => {
       router.push({ name: 'Dashboard', query: { loginSuccess: 'true' } });
     }
   } catch (error) {
-    toast.error(getErrorMessage(error, 'Invalid email or password'));
+    feedback.error('Gagal masuk', error);
   } finally {
     isLoading.value = false;
   }
