@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { useForm } from 'vee-validate';
+import { toTypedSchema } from '@vee-validate/zod';
+import * as zod from 'zod';
+import { Loader2 } from 'lucide-vue-next';
 import { useAuthStore } from '../../stores/auth';
 import { request } from '../../api/client';
 import { feedback } from '../../composables/useFeedback';
 import type { LoginResponse } from '../../types/auth';
-import { useForm } from 'vee-validate';
-import { toTypedSchema } from '@vee-validate/zod';
-import * as zod from 'zod';
-import { Lock, Mail, Loader2 } from 'lucide-vue-next';
+import AuthLayout from '../templates/AuthLayout.vue';
+import FormField from '../molecules/FormField.vue';
+import { Button } from '../atoms/button';
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -16,8 +19,8 @@ const isLoading = ref(false);
 
 const schema = toTypedSchema(
   zod.object({
-    email: zod.string().min(1, 'Email is required').email('Invalid email format'),
-    password: zod.string().min(1, 'Password is required'),
+    email: zod.string().trim().min(1, 'Email wajib diisi').email('Format email tidak valid'),
+    password: zod.string().min(1, 'Password wajib diisi'),
   })
 );
 
@@ -43,8 +46,7 @@ const onSubmit = handleSubmit(async (values) => {
       router.push({ name: 'ForceChangePassword' });
     } else {
       await authStore.fetchUser();
-      // Redirect immediately to dashboard with success query param
-      router.push({ name: 'Dashboard', query: { loginSuccess: 'true' } });
+      router.push({ name: 'Dashboard' });
     }
   } catch (error) {
     feedback.error('Gagal masuk', error);
@@ -55,61 +57,44 @@ const onSubmit = handleSubmit(async (values) => {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gray-50 font-sans p-4">
-    <div class="w-full max-w-md bg-white rounded-lg shadow-md p-8">
-      <div class="text-center mb-10">
-        <h1 class="text-3xl font-bold text-primary mb-2">amami</h1>
-        <p class="text-gray-400 font-medium">Please sign in to your account</p>
-      </div>
+  <AuthLayout
+    title="Masuk ke amami"
+    description="Gunakan email dan password akun pengurus Anda."
+  >
+    <form novalidate class="space-y-5" @submit="onSubmit">
+      <FormField label="Email" for="email" :error="errors.email">
+        <input
+          id="email"
+          v-model="email"
+          v-bind="emailAttrs"
+          type="email"
+          autocomplete="username"
+          placeholder="nama@masjid.org"
+          class="field-control"
+          :aria-invalid="Boolean(errors.email)"
+        />
+      </FormField>
 
-      <form @submit="onSubmit" class="space-y-6">
-        <div>
-          <label for="email" class="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
-          <div class="relative">
-            <Mail class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              v-model="email"
-              v-bind="emailAttrs"
-              type="email"
-              id="email"
-              placeholder="admin@amami.org"
-              class="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
-              :class="{ 'border-red-500 focus:ring-red-500/10 focus:border-red-500': errors.email }"
-            />
-          </div>
-          <p v-if="errors.email" class="mt-1.5 text-xs font-medium text-red-500">{{ errors.email }}</p>
-        </div>
+      <FormField label="Password" for="password" :error="errors.password">
+        <input
+          id="password"
+          v-model="password"
+          v-bind="passwordAttrs"
+          type="password"
+          autocomplete="current-password"
+          class="field-control"
+          :aria-invalid="Boolean(errors.password)"
+        />
+      </FormField>
 
-        <div>
-          <label for="password" class="block text-sm font-semibold text-gray-700 mb-2">Password</label>
-          <div class="relative">
-            <Lock class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              v-model="password"
-              v-bind="passwordAttrs"
-              type="password"
-              id="password"
-              placeholder="••••••••"
-              class="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
-              :class="{ 'border-red-500 focus:ring-red-500/10 focus:border-red-500': errors.password }"
-            />
-          </div>
-          <p v-if="errors.password" class="mt-1.5 text-xs font-medium text-red-500">{{ errors.password }}</p>
-        </div>
+      <Button type="submit" size="lg" class="w-full" :disabled="isLoading">
+        <Loader2 v-if="isLoading" class="animate-spin" />
+        {{ isLoading ? 'Memeriksa…' : 'Masuk' }}
+      </Button>
+    </form>
 
-        <button
-          type="submit"
-          :disabled="isLoading"
-          class="w-full py-3 bg-primary text-white font-bold rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm"
-        >
-          <Loader2 v-if="isLoading" class="w-5 h-5 animate-spin" />
-          {{ isLoading ? 'Signing in...' : 'Sign In' }}
-        </button>
-      </form>
-
-      <div class="mt-8 text-center text-xs text-gray-400 font-medium">
-        &copy; 2026 amami • Mosque Intelligence ERP
-      </div>
-    </div>
-  </div>
+    <p class="mt-8 text-xs leading-relaxed text-jati-muda">
+      Belum punya akun? Akun pengurus dibuat oleh admin masjid melalui menu Pengguna.
+    </p>
+  </AuthLayout>
 </template>

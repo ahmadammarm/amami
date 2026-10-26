@@ -1,239 +1,262 @@
 <script setup lang="ts">
+import { computed, type Component } from 'vue';
 import { useRouter } from 'vue-router';
-import { LogIn, Calendar, Info, ChevronRight, Activity, HandHeart, ShieldCheck, LayoutDashboard } from 'lucide-vue-next';
+import { Wallet, HandCoins, Beef, PackageSearch, CalendarRange, Copy, MapPin, Phone, ArrowRight, LayoutDashboard, LogIn } from 'lucide-vue-next';
 import heroBanner from '../../assets/hero-banner.jpg';
 import { useAuthStore } from '../../stores/auth';
+import { useMosqueProfileQuery } from '../../composables/useSettingsQuery';
+import { feedback } from '../../composables/useFeedback';
+import { ArchFrame, ARCH_PATH } from '../atoms/arch';
+import BrandMark from '../molecules/BrandMark.vue';
+
+interface Service {
+  name: string;
+  description: string;
+  /** Who keeps this record, per the RBAC matrix. */
+  keptBy: string;
+  icon: Component;
+}
 
 const router = useRouter();
 const authStore = useAuthStore();
+const { data: profile } = useMosqueProfileQuery();
+
 const currentYear = new Date().getFullYear();
+const mosqueName = computed(() => profile.value?.name || 'Masjid kami');
 
-// Static Data for initial version
-const programs = [
+const services: Service[] = [
   {
-    title: 'Zakat Management',
-    description: 'Transparent and precise collection and distribution of Zakat Fitrah and Zakat Maal.',
-    icon: HandHeart,
-    color: 'text-emerald-500'
+    name: 'Kas masjid',
+    description: 'Setiap pemasukan dan pengeluaran dicatat permanen. Koreksi dilakukan dengan entri pembalik, bukan dihapus.',
+    keptBy: 'Bendahara',
+    icon: Wallet,
   },
   {
-    title: 'Qurban Operations',
-    description: 'End-to-end handling of Eid al-Adha sacrifices, from donor booking to meat distribution.',
-    icon: Activity,
-    color: 'text-amber-500'
+    name: 'Zakat & infaq',
+    description: 'Penerimaan dari muzakki dan penyaluran ke mustahik, diprioritaskan dengan skor kebutuhan dari survei.',
+    keptBy: 'Bendahara dan takmir',
+    icon: HandCoins,
   },
   {
-    title: 'Community Registry',
-    description: 'Dynamic database of the Jamaah, categorizing volunteers, donors, and Mustahik.',
-    icon: ShieldCheck,
-    color: 'text-indigo-500'
-  }
+    name: 'Qurban',
+    description: 'Paket, pendaftaran shohibul, dan data hewan dari kedatangan sampai penyembelihan.',
+    keptBy: 'Takmir dan sekretaris',
+    icon: Beef,
+  },
+  {
+    name: 'Inventaris',
+    description: 'Daftar aset masjid beserta kondisinya, dan peminjaman oleh jamaah sampai barang kembali.',
+    keptBy: 'Takmir dan sekretaris',
+    icon: PackageSearch,
+  },
+  {
+    name: 'Agenda kegiatan',
+    description: 'Jadwal kajian dan kegiatan, lengkap dengan dokumentasi foto untuk laporan pertanggungjawaban.',
+    keptBy: 'Takmir dan sekretaris',
+    icon: CalendarRange,
+  },
 ];
 
-const newsArticles = [
-  {
-    id: 1,
-    title: 'New Mosque Expansion Plan Approved',
-    date: 'Jul 24, 2026',
-    excerpt: 'The committee has finalized the blueprints for the new library and study hall extension.',
-  },
-  {
-    id: 2,
-    title: 'Record Zakat Collection this Ramadan',
-    date: 'Jun 10, 2026',
-    excerpt: 'Alhamdulillah, our community came together to support over 500 families this year.',
-  },
-  {
-    id: 3,
-    title: 'Youth Leadership Program Launch',
-    date: 'May 15, 2026',
-    excerpt: 'Register your children for the upcoming intensive leadership and religious studies camp.',
+const zakatFitrah = computed(() => {
+  const amount = Number(profile.value?.zakat_fitrah_amount);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount);
+});
+
+const hasBankAccount = computed(() => Boolean(profile.value?.bank_account_number));
+
+const goToPortal = () => {
+  router.push(authStore.isAuthenticated ? { name: 'Dashboard' } : { name: 'Login' });
+};
+
+const copyAccountNumber = async () => {
+  const number = profile.value?.bank_account_number;
+  if (!number) return;
+  try {
+    await navigator.clipboard.writeText(number);
+    feedback.success('Nomor rekening disalin', `${number} siap ditempel di aplikasi bank Anda.`);
+  } catch {
+    feedback.error('Nomor rekening belum disalin', 'Browser tidak mengizinkan akses clipboard. Salin nomornya secara manual.');
   }
-];
+};
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 flex flex-col font-sans">
-    
-    <!-- Navbar -->
-    <header class="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 shadow-sm">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center h-16">
-          <div class="flex items-center gap-2">
-            <span class="text-2xl font-bold text-primary">amami</span>
-          </div>
-          <nav class="hidden md:flex gap-8 text-sm font-medium text-gray-600">
-            <a href="#history" class="hover:text-primary transition-colors">History</a>
-            <a href="#programs" class="hover:text-primary transition-colors">Programs</a>
-            <a href="#news" class="hover:text-primary transition-colors">News</a>
-          </nav>
-          <div class="flex items-center">
-            <button @click="authStore.isAuthenticated ? router.push('/dashboard') : router.push('/login')" class="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors shadow-sm">
-              <component :is="authStore.isAuthenticated ? LayoutDashboard : LogIn" class="w-4 h-4" />
-              {{ authStore.isAuthenticated ? 'Dashboard' : 'Sign In' }}
-            </button>
-          </div>
-        </div>
+  <div class="flex min-h-screen flex-col bg-kapur text-jati">
+    <!-- Navigation -->
+    <header class="sticky top-0 z-40 border-b border-batu bg-kapur/85 backdrop-blur">
+      <div class="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+        <RouterLink :to="{ name: 'Landing' }" class="rounded-md">
+          <BrandMark />
+        </RouterLink>
+        <nav class="hidden items-center gap-8 text-sm font-medium text-jati-muda md:flex" aria-label="Navigasi halaman">
+          <a href="#layanan" class="hover:text-sajadah">Layanan</a>
+          <a href="#zakat" class="hover:text-sajadah">Zakat & infaq</a>
+          <a href="#kontak" class="hover:text-sajadah">Kontak</a>
+        </nav>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-lg bg-sajadah px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-sajadah-tua"
+          @click="goToPortal"
+        >
+          <component :is="authStore.isAuthenticated ? LayoutDashboard : LogIn" class="size-4" />
+          {{ authStore.isAuthenticated ? 'Buka dashboard' : 'Masuk pengurus' }}
+        </button>
       </div>
     </header>
 
-    <!-- Hero Section -->
-    <section class="relative bg-primary overflow-hidden">
-      <!-- Decorative background elements -->
-      <div class="absolute inset-0 opacity-10">
-        <div class="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-white blur-3xl"></div>
-        <div class="absolute top-32 -left-20 w-72 h-72 rounded-full bg-white blur-3xl"></div>
-      </div>
-      
-      <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-32">
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          <!-- Left Column (Text & CTA) -->
-          <div class="flex flex-col items-start text-left z-10">
-            <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold text-white tracking-tight mb-6">
-              Digitizing Mosque Operations for a Better Community
-            </h1>
-            <p class="text-lg md:text-xl text-white/90 mb-10 leading-relaxed max-w-xl">
-              Amami is a comprehensive Enterprise Resource Planning platform that transforms traditional mosque management into an auditable, data-driven framework.
-            </p>
-            <div class="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
-              <button @click="authStore.isAuthenticated ? router.push('/dashboard') : router.push('/login')" class="px-8 py-3.5 bg-white text-primary font-bold rounded-xl hover:bg-gray-50 transition-colors shadow-lg shadow-primary/20 flex items-center justify-center gap-2 text-lg">
-                {{ authStore.isAuthenticated ? 'Go to Dashboard' : 'Access Portal' }}
-                <ChevronRight class="w-5 h-5" />
-              </button>
-              <a href="#history" class="px-8 py-3.5 bg-white/10 text-white font-semibold rounded-xl hover:bg-white/20 transition-colors backdrop-blur-sm border border-white/20 flex items-center justify-center text-lg">
-                Learn More
-              </a>
-            </div>
-          </div>
-          
-          <!-- Right Column (Image) -->
-          <div class="relative z-10 w-full max-w-md lg:max-w-lg mx-auto rounded-2xl overflow-hidden shadow-2xl border border-white/10 transform hover:scale-[1.02] transition-transform duration-500">
-            <div class="absolute inset-0 bg-gradient-to-tr from-primary/20 to-transparent mix-blend-overlay z-10 pointer-events-none"></div>
-            <img :src="heroBanner" alt="Hero Banner" class="w-full aspect-square md:aspect-[4/3] object-cover rounded-2xl" />
+    <main class="flex-1">
+      <!-- Hero -->
+      <section class="mx-auto grid max-w-6xl items-center gap-12 px-4 pt-12 pb-20 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16 lg:pt-20 lg:pb-28">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-[0.2em] text-kuningan">{{ mosqueName }}</p>
+          <h1 class="mt-5 font-display text-5xl font-semibold leading-[1.05] tracking-wide text-jati sm:text-6xl lg:text-7xl">
+            Amanah jamaah, tercatat rapi.
+          </h1>
+          <p class="mt-6 max-w-xl text-lg leading-relaxed text-jati-muda">
+            Kas, zakat, qurban, inventaris, dan kegiatan {{ mosqueName }} dikelola pengurus dalam satu catatan yang
+            terbuka, sehingga setiap rupiah dan setiap kegiatan dapat dipertanggungjawabkan.
+          </p>
+          <div class="mt-9 flex flex-col gap-3 sm:flex-row">
+            <a
+              href="#zakat"
+              class="inline-flex items-center justify-center gap-2 rounded-lg bg-sajadah px-6 py-3 font-semibold text-white transition-colors hover:bg-sajadah-tua"
+            >
+              Salurkan zakat & infaq
+              <ArrowRight class="size-4" />
+            </a>
+            <a
+              href="#layanan"
+              class="inline-flex items-center justify-center rounded-lg border border-batu-tua bg-white px-6 py-3 font-semibold text-jati transition-colors hover:border-sajadah hover:text-sajadah"
+            >
+              Lihat yang kami kelola
+            </a>
           </div>
         </div>
-      </div>
-    </section>
 
-    <!-- History Section -->
-    <section id="history" class="py-20 bg-white">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
-          <div>
-            <div class="inline-flex items-center justify-center p-3 bg-primary/10 rounded-xl mb-6 text-primary">
-              <Info class="w-8 h-8" />
-            </div>
-            <h2 class="text-3xl font-bold text-gray-900 mb-6">Our History & Vision</h2>
-            <p class="text-gray-600 mb-6 leading-relaxed text-lg">
-              Established in the heart of the community, our mosque has served as a spiritual and social center for decades. As the community grew, so did the complexity of our operations.
-            </p>
-            <p class="text-gray-600 leading-relaxed text-lg mb-8">
-              Amami was born out of the necessity to professionalize these operations. By enforcing strict Role-Based Access Control and maintaining an immutable financial ledger, we ensure absolute transparency and trust in managing community resources.
-            </p>
-          </div>
+        <!-- Signature: the mosque seen through a mihrab arch -->
+        <figure class="mx-auto w-full max-w-sm lg:max-w-md">
           <div class="relative">
-            <!-- Placeholder for an image or illustration -->
-            <div class="aspect-video bg-gray-100 rounded-2xl overflow-hidden shadow-xl border border-gray-200 flex items-center justify-center">
-              <span class="text-gray-400 font-medium">Mosque Historic Image Placeholder</span>
-            </div>
-            <div class="absolute -bottom-6 -left-6 bg-white p-6 rounded-xl shadow-lg border border-gray-100 hidden md:block">
-              <p class="text-4xl font-bold text-primary mb-1">20+</p>
-              <p class="text-sm font-semibold text-gray-500">Years of Service</p>
-            </div>
+            <svg
+              viewBox="0 0 40 50"
+              class="absolute -top-4 -right-4 h-full w-full text-kuningan"
+              aria-hidden="true"
+            >
+              <path :d="ARCH_PATH" fill="none" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke" />
+            </svg>
+            <ArchFrame :src="heroBanner" :alt="`Halaman ${mosqueName}`" class="relative w-full" />
           </div>
-        </div>
-      </div>
-    </section>
+          <figcaption v-if="profile?.address" class="mt-4 flex items-start gap-2 text-sm text-jati-muda">
+            <MapPin class="mt-0.5 size-4 shrink-0 text-kuningan" />
+            {{ profile.address }}
+          </figcaption>
+        </figure>
+      </section>
 
-    <!-- Programs (Catalog) Section -->
-    <section id="programs" class="py-20 bg-gray-50">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="text-center max-w-3xl mx-auto mb-16">
-          <h2 class="text-3xl font-bold text-gray-900 mb-4">Core Programs</h2>
-          <p class="text-gray-600 text-lg">Explore the key modules that power our digital mosque management framework.</p>
-        </div>
-        
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div v-for="program in programs" :key="program.title" class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow group">
-            <div class="w-14 h-14 bg-gray-50 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-              <component :is="program.icon" :class="['w-7 h-7', program.color]" />
-            </div>
-            <h3 class="text-xl font-bold text-gray-900 mb-3">{{ program.title }}</h3>
-            <p class="text-gray-600 leading-relaxed">{{ program.description }}</p>
+      <!-- Services -->
+      <section id="layanan" class="border-t border-batu bg-white">
+        <div class="mx-auto grid max-w-6xl gap-10 px-4 py-20 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
+          <div class="lg:sticky lg:top-28 lg:self-start">
+            <h2 class="font-display text-4xl font-semibold tracking-wide text-jati">Yang dikelola pengurus</h2>
+            <p class="mt-4 max-w-sm leading-relaxed text-jati-muda">
+              Setiap catatan dipegang oleh pengurus yang bertanggung jawab atasnya, dan tidak bisa diubah diam-diam.
+            </p>
           </div>
+          <ul class="shaf border-y border-batu">
+            <li v-for="service in services" :key="service.name" class="grid gap-4 py-7 sm:grid-cols-[auto_1fr]">
+              <span class="flex size-11 items-center justify-center rounded-full bg-sajadah-muda text-sajadah">
+                <component :is="service.icon" class="size-5" />
+              </span>
+              <div>
+                <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <h3 class="text-lg font-semibold text-jati">{{ service.name }}</h3>
+                  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-kuningan">Dicatat oleh {{ service.keptBy }}</p>
+                </div>
+                <p class="mt-2 leading-relaxed text-jati-muda">{{ service.description }}</p>
+              </div>
+            </li>
+          </ul>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- News Section -->
-    <section id="news" class="py-20 bg-white">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-end mb-12">
+      <!-- Zakat & infaq -->
+      <section id="zakat" class="pola-girih bg-sajadah-tua text-white">
+        <div class="mx-auto grid max-w-6xl items-center gap-10 px-4 py-20 sm:px-6 lg:grid-cols-2 lg:gap-16">
           <div>
-            <h2 class="text-3xl font-bold text-gray-900 mb-4">Latest News</h2>
-            <p class="text-gray-600 text-lg max-w-2xl">Stay updated with the latest announcements, articles, and community highlights.</p>
+            <h2 class="font-display text-4xl font-semibold tracking-wide">Zakat & infaq</h2>
+            <p class="mt-4 max-w-md leading-relaxed text-white/75">
+              Zakat dan infaq yang Anda titipkan tercatat sebagai penerimaan kas, lalu disalurkan kepada mustahik
+              yang telah disurvei pengurus.
+            </p>
+            <p v-if="zakatFitrah" class="mt-8 text-sm text-white/60">
+              Zakat fitrah<span v-if="profile?.active_hijri_year"> tahun {{ profile.active_hijri_year }} H</span>
+            </p>
+            <p v-if="zakatFitrah" class="tabular mt-1 font-display text-4xl font-semibold text-kuningan">
+              {{ zakatFitrah }} <span class="font-sans text-base font-medium text-white/70">per jiwa</span>
+            </p>
           </div>
-          <button class="hidden sm:inline-flex items-center text-primary font-semibold hover:text-primary/80 transition-colors">
-            View All News <ChevronRight class="w-4 h-4 ml-1" />
+
+          <div class="rounded-2xl bg-white p-7 text-jati shadow-lg">
+            <template v-if="hasBankAccount && profile">
+              <p class="text-xs font-semibold uppercase tracking-[0.16em] text-jati-muda">Rekening masjid</p>
+              <p class="mt-3 text-lg font-semibold">{{ profile.bank_name }}</p>
+              <p class="tabular mt-1 font-mono text-2xl tracking-wider text-sajadah-tua">{{ profile.bank_account_number }}</p>
+              <p class="mt-1 text-sm text-jati-muda">a.n. {{ profile.bank_account_name }}</p>
+              <button
+                type="button"
+                class="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-sajadah px-5 py-3 font-semibold text-white transition-colors hover:bg-sajadah-tua"
+                @click="copyAccountNumber"
+              >
+                <Copy class="size-4" />
+                Salin nomor rekening
+              </button>
+              <p class="mt-4 text-xs leading-relaxed text-jati-muda">
+                Setelah transfer, kabari pengurus agar titipan Anda dicatat atas nama Anda.
+              </p>
+            </template>
+            <template v-else>
+              <p class="font-semibold">Rekening belum diumumkan</p>
+              <p class="mt-2 text-sm leading-relaxed text-jati-muda">
+                Untuk menitipkan zakat atau infaq, silakan hubungi pengurus melalui kontak di bawah, atau datang langsung
+                ke sekretariat masjid.
+              </p>
+            </template>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Contact -->
+    <footer id="kontak" class="bg-jati text-white/70">
+      <div class="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.4fr_1fr_auto]">
+        <div>
+          <BrandMark variant="light" />
+          <p class="mt-4 max-w-sm text-sm leading-relaxed">
+            {{ mosqueName }} mengelola administrasinya dengan amami, aplikasi manajemen masjid.
+          </p>
+        </div>
+        <div class="space-y-3 text-sm">
+          <p class="text-xs font-semibold uppercase tracking-[0.16em] text-white/45">Kontak</p>
+          <p v-if="profile?.address" class="flex items-start gap-2">
+            <MapPin class="mt-0.5 size-4 shrink-0 text-kuningan" /> {{ profile.address }}
+          </p>
+          <p v-if="profile?.phone" class="flex items-center gap-2">
+            <Phone class="size-4 shrink-0 text-kuningan" />
+            <a :href="`tel:${profile.phone}`" class="hover:text-white">{{ profile.phone }}</a>
+          </p>
+        </div>
+        <div class="text-sm">
+          <p class="text-xs font-semibold uppercase tracking-[0.16em] text-white/45">Pengurus</p>
+          <button type="button" class="mt-3 hover:text-white" @click="goToPortal">
+            {{ authStore.isAuthenticated ? 'Buka dashboard' : 'Masuk ke dashboard' }}
           </button>
         </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <article v-for="news in newsArticles" :key="news.id" class="flex flex-col group cursor-pointer">
-            <div class="aspect-video bg-gray-100 rounded-2xl mb-5 overflow-hidden">
-              <div class="w-full h-full bg-gray-200 group-hover:bg-gray-300 transition-colors flex items-center justify-center text-gray-400">
-                Image Placeholder
-              </div>
-            </div>
-            <time class="text-sm font-semibold text-primary mb-2 flex items-center gap-2">
-              <Calendar class="w-4 h-4" /> {{ news.date }}
-            </time>
-            <h3 class="text-xl font-bold text-gray-900 mb-3 group-hover:text-primary transition-colors">
-              {{ news.title }}
-            </h3>
-            <p class="text-gray-600 line-clamp-3">
-              {{ news.excerpt }}
-            </p>
-          </article>
-        </div>
       </div>
-    </section>
-
-    <!-- Footer -->
-    <footer class="bg-gray-900 text-white py-12 mt-auto">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8 border-b border-gray-800 pb-8">
-          <div class="col-span-1 md:col-span-2">
-            <span class="text-2xl font-bold text-white mb-4 block">amami</span>
-            <p class="text-gray-400 max-w-md">
-              Aplikasi Manajemen Masjid. Empowering communities through transparent, efficient, and digital administration.
-            </p>
-          </div>
-          <div>
-            <h4 class="font-semibold mb-4 text-gray-100">Quick Links</h4>
-            <ul class="space-y-2 text-gray-400 text-sm">
-              <li><a href="#history" class="hover:text-white transition-colors">History</a></li>
-              <li><a href="#programs" class="hover:text-white transition-colors">Programs</a></li>
-              <li><a href="#news" class="hover:text-white transition-colors">News</a></li>
-            </ul>
-          </div>
-          <div>
-            <h4 class="font-semibold mb-4 text-gray-100">Portal</h4>
-            <ul class="space-y-2 text-gray-400 text-sm">
-              <li><button @click="router.push('/login')" class="hover:text-white transition-colors">Admin Login</button></li>
-              <li><button @click="router.push('/login')" class="hover:text-white transition-colors">Jamaah Portal</button></li>
-            </ul>
-          </div>
-        </div>
-        <div class="flex flex-col md:flex-row justify-between items-center text-sm text-gray-500">
-          <p>&copy; {{ currentYear }} amami. All rights reserved.</p>
-          <div class="mt-4 md:mt-0 space-x-4">
-            <a href="#" class="hover:text-gray-300">Privacy Policy</a>
-            <a href="#" class="hover:text-gray-300">Terms of Service</a>
-          </div>
-        </div>
+      <div class="border-t border-white/10">
+        <p class="mx-auto max-w-6xl px-4 py-5 text-xs text-white/45 sm:px-6">
+          &copy; {{ currentYear }} {{ mosqueName }}
+        </p>
       </div>
     </footer>
-
   </div>
 </template>
