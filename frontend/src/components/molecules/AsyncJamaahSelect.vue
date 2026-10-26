@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useQuery } from '@tanstack/vue-query';
 import { jamaahService } from '../../api/services/jamaah';
 import { queryKeys } from '../../api/queryKeys';
-import { scoreBadgeClass, scoreLevel } from '../../lib/mustahik';
+import { scoreTone } from '../../lib/mustahik';
 import type { Jamaah, JamaahListParams } from '../../types/jamaah';
 import { Check, ChevronsUpDown, Loader2 } from 'lucide-vue-next';
 import { useDebounceFn } from '@vueuse/core';
@@ -20,7 +20,7 @@ import {
   CommandItem,
   CommandList,
 } from '../atoms/command';
-import Button from '../atoms/button/Button.vue';
+import StatusBadge from './StatusBadge.vue';
 
 const props = defineProps<{
   /** Selected jamaah id; empty or undefined when nothing is selected. */
@@ -77,31 +77,26 @@ const handleSelect = (jamaah: Jamaah) => {
 <template>
   <Popover v-model:open="open">
     <PopoverTrigger as-child>
-      <Button
-        variant="outline"
+      <button
+        type="button"
         role="combobox"
         :aria-expanded="open"
-        class="w-full justify-between font-normal h-11 border-gray-300 rounded-lg px-3"
+        class="field-control flex items-center justify-between gap-2 text-left"
       >
-        <span class="truncate">
-          {{ selectedJamaah ? selectedJamaah.full_name : (placeholder || 'Select Jamaah...') }}
+        <span class="truncate" :class="selectedJamaah ? 'text-jati' : 'text-jati-muda/70'">
+          {{ selectedJamaah ? selectedJamaah.full_name : (placeholder || 'Pilih jamaah…') }}
         </span>
-        <ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-      </Button>
+        <ChevronsUpDown class="size-4 shrink-0 text-jati-muda" />
+      </button>
     </PopoverTrigger>
-    <PopoverContent class="w-full p-0 shadow-xl border-gray-100 rounded-xl" align="start">
+    <PopoverContent class="w-(--reka-popover-trigger-width) min-w-72 rounded-xl border-batu p-0 shadow-lg" align="start">
       <Command>
-        <CommandInput
-          placeholder="Search jamaah by name..."
-          v-model="searchQuery"
-          class="h-11 border-none focus:ring-0"
-        />
-        <CommandEmpty class="py-6 text-center text-sm text-gray-500">
-          <span v-if="isLoading">
-            <Loader2 class="w-4 h-4 animate-spin mx-auto mb-2" />
-            Searching...
+        <CommandInput v-model="searchQuery" placeholder="Ketik nama jamaah…" />
+        <CommandEmpty class="py-6 text-center text-sm text-jati-muda">
+          <span v-if="isLoading" class="inline-flex items-center gap-2">
+            <Loader2 class="size-4 animate-spin" /> Mencari…
           </span>
-          <span v-else>No jamaah found.</span>
+          <span v-else>Tidak ada jamaah yang cocok.</span>
         </CommandEmpty>
         <CommandList>
           <CommandGroup>
@@ -109,22 +104,14 @@ const handleSelect = (jamaah: Jamaah) => {
               v-for="jamaah in searchResults"
               :key="jamaah.id"
               :value="jamaah.full_name"
+              class="cursor-pointer rounded-md py-2.5 text-sm"
               @select="handleSelect(jamaah)"
-              class="cursor-pointer py-2.5 rounded-md text-sm"
             >
-              <Check
-                :class="[
-                  'mr-2 h-4 w-4',
-                  modelValue === jamaah.id ? 'opacity-100' : 'opacity-0'
-                ]"
-              />
-              {{ jamaah.full_name }}
-              <span
-                v-if="mustahikOnly"
-                :class="['ml-auto px-2 py-0.5 rounded-full text-[10px] font-semibold', scoreBadgeClass[scoreLevel(jamaah.mustahik_score)]]"
-              >
+              <Check class="mr-2 size-4" :class="modelValue === jamaah.id ? 'opacity-100 text-sajadah' : 'opacity-0'" />
+              <span class="flex-1 truncate">{{ jamaah.full_name }}</span>
+              <StatusBadge v-if="mustahikOnly" :tone="scoreTone(jamaah.mustahik_score)" class="tabular">
                 {{ jamaah.mustahik_score.toFixed(1) }}
-              </span>
+              </StatusBadge>
             </CommandItem>
           </CommandGroup>
         </CommandList>

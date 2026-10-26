@@ -3,11 +3,13 @@ import { computed, ref } from 'vue';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
 import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/zod';
+import { Plus, Pencil, Trash2, Beef, UserPlus } from 'lucide-vue-next';
 import { qurbanService } from '../../api/services/qurban';
-import { getErrorMessage } from '../../api/client';
 import { queryKeys } from '../../api/queryKeys';
+import { feedback } from '../../composables/useFeedback';
 import { useAuthStore } from '../../stores/auth';
 import { Permission } from '../../lib/permissions';
+import { formatDate, formatNumber, formatRupiah } from '../../lib/format';
 import {
   animalSchema,
   bookingSchema,
@@ -16,43 +18,75 @@ import {
   type BookingPayload,
   type PackagePayload,
 } from '../../schemas/qurban';
-import type { QurbanAnimal, QurbanPackage } from '../../types/qurban';
+import type { AnimalStatus, AnimalType, PackageType, PaymentStatus, QurbanAnimal, QurbanPackage } from '../../types/qurban';
+import type { BadgeTone } from '../../types/ui';
+import PageHeader from '../molecules/PageHeader.vue';
+import DataPanel from '../molecules/DataPanel.vue';
+import EmptyState from '../molecules/EmptyState.vue';
+import StatCard from '../molecules/StatCard.vue';
+import StatusBadge from '../molecules/StatusBadge.vue';
+import FormDialog from '../molecules/FormDialog.vue';
+import FormField from '../molecules/FormField.vue';
 import AsyncJamaahSelect from '../molecules/AsyncJamaahSelect.vue';
-import { PlusIcon, XIcon, TrashIcon, EditIcon, PackageIcon, UsersIcon, DogIcon } from 'lucide-vue-next';
-import { toast } from 'vue-sonner';
+import { Button } from '../atoms/button';
 
 type TabId = 'packages' | 'bookings' | 'animals';
+
+const PACKAGE_TYPE_LABELS: Record<PackageType, string> = {
+  SAPI: 'Sapi',
+  SAPI_KOLEKTIF: 'Sapi kolektif (1/7)',
+  KAMBING: 'Kambing',
+  DOMBA: 'Domba',
+};
+
+const ANIMAL_TYPE_LABELS: Record<AnimalType, string> = {
+  SAPI: 'Sapi',
+  KAMBING: 'Kambing',
+  DOMBA: 'Domba',
+};
+
+const ANIMAL_STATUS: Record<AnimalStatus, { label: string; tone: BadgeTone }> = {
+  AVAILABLE: { label: 'Tersedia', tone: 'sajadah' },
+  ASSIGNED: { label: 'Dialokasikan', tone: 'kuningan' },
+  SLAUGHTERED: { label: 'Disembelih', tone: 'netral' },
+};
+
+const PAYMENT_STATUS: Record<PaymentStatus, { label: string; tone: BadgeTone }> = {
+  PENDING: { label: 'Belum lunas', tone: 'kuningan' },
+  PAID: { label: 'Lunas', tone: 'sajadah' },
+};
 
 const authStore = useAuthStore();
 const queryClient = useQueryClient();
 
 const canManage = computed(() => authStore.can(Permission.QurbanManage));
 
-const tabs: { id: TabId; name: string }[] = [
-  { id: 'packages', name: 'Paket Qurban' },
-  { id: 'bookings', name: 'Pendaftaran' },
-  { id: 'animals', name: 'Hewan Qurban' }
+const tabs: { id: TabId; label: string }[] = [
+  { id: 'packages', label: 'Paket' },
+  { id: 'bookings', label: 'Pendaftaran' },
+  { id: 'animals', label: 'Hewan' },
 ];
 const activeTab = ref<TabId>('packages');
 
-// Queries
 const { data: packages, isLoading: isLoadingPackages } = useQuery({
   queryKey: queryKeys.qurban.packages,
-  queryFn: () => qurbanService.getPackages(1, 100)
+  queryFn: () => qurbanService.getPackages(1, 100),
 });
 
 const { data: bookings, isLoading: isLoadingBookings } = useQuery({
   queryKey: queryKeys.qurban.bookings,
-  queryFn: qurbanService.getBookings
+  queryFn: qurbanService.getBookings,
 });
 
 const { data: animals, isLoading: isLoadingAnimals } = useQuery({
   queryKey: queryKeys.qurban.animals,
-  queryFn: qurbanService.getAnimals
+  queryFn: qurbanService.getAnimals,
 });
 
 const packageItems = computed(() => packages.value?.items ?? []);
 const availablePackages = computed(() => packageItems.value.filter(p => p.stock_remaining > 0));
+const remainingStock = computed(() => packageItems.value.reduce((sum, p) => sum + p.stock_remaining, 0));
+const paidBookings = computed(() => (bookings.value ?? []).filter(b => b.payment_status === 'PAID').length);
 
 const refreshQurban = () => {
   queryClient.invalidateQueries({ queryKey: queryKeys.qurban.all });
@@ -60,8 +94,8 @@ const refreshQurban = () => {
 };
 
 // Package form
-const showPackageDialog = ref(false);
-const editingPackageId = ref<number | null>(null);
+const showPackageForm = ref(false);
+const editingPackage = ref<QurbanPackage | null>(null);
 const emptyPackage: PackagePayload = { name: '', type: 'SAPI', price: 0, year_hijri: 1447, stock_total: 1 };
 
 const {
@@ -77,9 +111,52 @@ const [packagePrice] = definePackageField('price');
 const [packageYear] = definePackageField('year_hijri');
 const [packageStock] = definePackageField('stock_total');
 
+const savePackageMutation = useMutation({
+  mutationFn: (payload: PackagePayload) =>
+    editingPackage.value ? qurbanService.updatePackage(editingPackage.value.id, payload) : qurbanService.createPackage(payload),
+  onSuccess: (pkg) => {
+    const wasEditing = editingPackage.value !== null;
+    refreshQurban();
+    showPackageForm.value = false;
+    feedback.success(wasEditing ? 'Paket diperbarui' : 'Paket ditambahkan', `${pkg.name}, ${formatRupiah(pkg.price)}.`);
+  },
+  onError: (error: unknown) => feedback.error('Paket belum disimpan', error),
+});
+
+const openPackageForm = (pkg: QurbanPackage | null) => {
+  editingPackage.value = pkg;
+  resetPackageForm({
+    values: pkg
+      ? { name: pkg.name, type: pkg.type, price: pkg.price, year_hijri: pkg.year_hijri, stock_total: pkg.stock_total }
+      : emptyPackage,
+  });
+  showPackageForm.value = true;
+};
+
+const submitPackage = handlePackageSubmit((values) => savePackageMutation.mutate(values));
+
+const deletePackageMutation = useMutation({
+  mutationFn: qurbanService.deletePackage,
+  onSuccess: () => {
+    refreshQurban();
+    feedback.success('Paket dihapus');
+  },
+  onError: (error: unknown) => feedback.error('Paket belum dihapus', error),
+});
+
+const confirmDeletePackage = async (pkg: QurbanPackage) => {
+  const confirmed = await feedback.confirm({
+    title: 'Hapus paket?',
+    message: `${pkg.name} tidak bisa dipilih lagi untuk pendaftaran baru. Pendaftaran yang sudah ada tetap tersimpan.`,
+    confirmLabel: 'Hapus paket',
+    danger: true,
+  });
+  if (confirmed) deletePackageMutation.mutate(pkg.id);
+};
+
 // Animal form
-const showAnimalDialog = ref(false);
-const editingAnimalId = ref<string | null>(null);
+const showAnimalForm = ref(false);
+const editingAnimal = ref<QurbanAnimal | null>(null);
 const emptyAnimal: AnimalPayload = { tag_number: '', type: 'SAPI', weight: 0, status: 'AVAILABLE', vendor_info: '' };
 
 const {
@@ -95,8 +172,51 @@ const [animalWeight] = defineAnimalField('weight');
 const [animalStatus] = defineAnimalField('status');
 const [animalVendor] = defineAnimalField('vendor_info');
 
+const saveAnimalMutation = useMutation({
+  mutationFn: (payload: AnimalPayload) =>
+    editingAnimal.value ? qurbanService.updateAnimal(editingAnimal.value.id, payload) : qurbanService.createAnimal(payload),
+  onSuccess: (animal) => {
+    const wasEditing = editingAnimal.value !== null;
+    refreshQurban();
+    showAnimalForm.value = false;
+    feedback.success(wasEditing ? 'Data hewan diperbarui' : 'Hewan ditambahkan', `Tag ${animal.tag_number}.`);
+  },
+  onError: (error: unknown) => feedback.error('Data hewan belum disimpan', error),
+});
+
+const openAnimalForm = (animal: QurbanAnimal | null) => {
+  editingAnimal.value = animal;
+  resetAnimalForm({
+    values: animal
+      ? { tag_number: animal.tag_number, type: animal.type, weight: animal.weight, status: animal.status, vendor_info: animal.vendor_info }
+      : emptyAnimal,
+  });
+  showAnimalForm.value = true;
+};
+
+const submitAnimal = handleAnimalSubmit((values) => saveAnimalMutation.mutate(values));
+
+const deleteAnimalMutation = useMutation({
+  mutationFn: qurbanService.deleteAnimal,
+  onSuccess: () => {
+    refreshQurban();
+    feedback.success('Data hewan dihapus');
+  },
+  onError: (error: unknown) => feedback.error('Data hewan belum dihapus', error),
+});
+
+const confirmDeleteAnimal = async (animal: QurbanAnimal) => {
+  const confirmed = await feedback.confirm({
+    title: 'Hapus data hewan?',
+    message: `Hewan dengan tag ${animal.tag_number} akan dihapus dari daftar.`,
+    confirmLabel: 'Hapus hewan',
+    danger: true,
+  });
+  if (confirmed) deleteAnimalMutation.mutate(animal.id);
+};
+
 // Booking form
-const showBookingDialog = ref(false);
+const showBookingForm = ref(false);
 const emptyBooking: BookingPayload = { shohibul_id: '', package_id: 0, payment_status: 'PENDING' };
 
 const {
@@ -114,522 +234,260 @@ const selectedPackagePrice = computed(
   () => packageItems.value.find(p => p.id === bookingPackageId.value)?.price ?? 0,
 );
 
-// Package Mutations
-const createPackageMutation = useMutation({
-  mutationFn: qurbanService.createPackage,
-  onSuccess: () => {
-    toast.success('Paket berhasil dibuat');
-    refreshQurban();
-    closePackageDialog();
-  },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal membuat paket'))
-});
-
-const updatePackageMutation = useMutation({
-  mutationFn: ({ id, payload }: { id: number, payload: PackagePayload }) => qurbanService.updatePackage(id, payload),
-  onSuccess: () => {
-    toast.success('Paket diperbarui');
-    refreshQurban();
-    closePackageDialog();
-  },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal memperbarui paket'))
-});
-
-const deletePackageMutation = useMutation({
-  mutationFn: qurbanService.deletePackage,
-  onSuccess: () => {
-    toast.success('Paket dihapus');
-    refreshQurban();
-  },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal menghapus paket'))
-});
-
-// Animal Mutations
-const createAnimalMutation = useMutation({
-  mutationFn: qurbanService.createAnimal,
-  onSuccess: () => {
-    toast.success('Hewan berhasil didata');
-    refreshQurban();
-    closeAnimalDialog();
-  },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal mendata hewan'))
-});
-
-const updateAnimalMutation = useMutation({
-  mutationFn: ({ id, payload }: { id: string, payload: AnimalPayload }) => qurbanService.updateAnimal(id, payload),
-  onSuccess: () => {
-    toast.success('Data hewan diperbarui');
-    refreshQurban();
-    closeAnimalDialog();
-  },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal memperbarui data hewan'))
-});
-
-const deleteAnimalMutation = useMutation({
-  mutationFn: qurbanService.deleteAnimal,
-  onSuccess: () => {
-    toast.success('Data hewan dihapus');
-    refreshQurban();
-  },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal menghapus data hewan'))
-});
-
-// Booking Mutation
 const createBookingMutation = useMutation({
   mutationFn: qurbanService.createBooking,
   onSuccess: (booking) => {
-    toast.success(`Pendaftaran ${booking.shohibul_name} berhasil`);
     refreshQurban();
-    closeBookingDialog();
+    showBookingForm.value = false;
+    feedback.success('Shohibul terdaftar', `${booking.shohibul_name} terdaftar untuk ${booking.package_name}.`);
   },
-  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Gagal mendaftarkan shohibul'))
+  onError: (error: unknown) => feedback.error('Shohibul belum terdaftar', error),
 });
 
-const isSavingPackage = computed(() => createPackageMutation.isPending.value || updatePackageMutation.isPending.value);
-const isSavingAnimal = computed(() => createAnimalMutation.isPending.value || updateAnimalMutation.isPending.value);
-
-// Handlers
-const openPackageDialog = () => {
-  editingPackageId.value = null;
-  resetPackageForm({ values: emptyPackage });
-  showPackageDialog.value = true;
-};
-
-const openEditPackageDialog = (pkg: QurbanPackage) => {
-  editingPackageId.value = pkg.id;
-  resetPackageForm({
-    values: {
-      name: pkg.name,
-      type: pkg.type,
-      price: pkg.price,
-      year_hijri: pkg.year_hijri,
-      stock_total: pkg.stock_total,
-    },
-  });
-  showPackageDialog.value = true;
-};
-
-const closePackageDialog = () => { showPackageDialog.value = false; };
-
-const submitPackage = handlePackageSubmit((values) => {
-  if (editingPackageId.value) {
-    updatePackageMutation.mutate({ id: editingPackageId.value, payload: values });
-  } else {
-    createPackageMutation.mutate(values);
-  }
-});
-
-const confirmDeletePackage = (pkg: QurbanPackage) => {
-  if (window.confirm(`Hapus paket "${pkg.name}"?`)) deletePackageMutation.mutate(pkg.id);
-};
-
-const openAnimalDialog = () => {
-  editingAnimalId.value = null;
-  resetAnimalForm({ values: emptyAnimal });
-  showAnimalDialog.value = true;
-};
-
-const openEditAnimalDialog = (animal: QurbanAnimal) => {
-  editingAnimalId.value = animal.id;
-  resetAnimalForm({
-    values: {
-      tag_number: animal.tag_number,
-      type: animal.type,
-      weight: animal.weight,
-      status: animal.status,
-      vendor_info: animal.vendor_info,
-    },
-  });
-  showAnimalDialog.value = true;
-};
-
-const closeAnimalDialog = () => { showAnimalDialog.value = false; };
-
-const submitAnimal = handleAnimalSubmit((values) => {
-  if (editingAnimalId.value) {
-    updateAnimalMutation.mutate({ id: editingAnimalId.value, payload: values });
-  } else {
-    createAnimalMutation.mutate(values);
-  }
-});
-
-const confirmDeleteAnimal = (animal: QurbanAnimal) => {
-  if (window.confirm(`Hapus data hewan ${animal.tag_number}?`)) deleteAnimalMutation.mutate(animal.id);
-};
-
-const openBookingDialog = () => {
+const openBookingForm = () => {
   resetBookingForm({ values: emptyBooking });
-  showBookingDialog.value = true;
+  showBookingForm.value = true;
 };
-
-const closeBookingDialog = () => { showBookingDialog.value = false; };
 
 const submitBooking = handleBookingSubmit((values) => createBookingMutation.mutate(values));
-
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(amount);
-};
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-bold text-gray-900">Manajemen Qurban</h1>
-        <p class="text-sm text-gray-500 mt-1">Kelola paket qurban, pendaftaran shohibul, dan hewan qurban</p>
-      </div>
-      <div v-if="canManage" class="flex gap-2">
-        <button @click="openPackageDialog" class="inline-flex items-center justify-center rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 h-10 px-4 transition-colors">
-          <PlusIcon class="w-4 h-4 mr-2" />
-          Tambah Paket
-        </button>
-        <button @click="openAnimalDialog" class="inline-flex items-center justify-center rounded-xl text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 h-10 px-4 transition-colors">
-          <PlusIcon class="w-4 h-4 mr-2" />
-          Tambah Hewan
-        </button>
-      </div>
+  <div class="space-y-8">
+    <PageHeader title="Qurban" description="Paket qurban, pendaftaran shohibul, dan data hewan sampai hari penyembelihan.">
+      <template v-if="canManage" #actions>
+        <Button variant="outline" @click="openAnimalForm(null)"><Plus /> Tambah hewan</Button>
+        <Button variant="outline" @click="openPackageForm(null)"><Plus /> Tambah paket</Button>
+        <Button @click="openBookingForm"><UserPlus /> Daftarkan shohibul</Button>
+      </template>
+    </PageHeader>
+
+    <div class="grid gap-4 sm:grid-cols-3">
+      <StatCard label="Sisa kuota" :value="formatNumber(remainingStock)" :hint="`dari ${formatNumber(packageItems.length)} paket`" />
+      <StatCard label="Shohibul" :value="formatNumber(bookings?.length ?? 0)" :hint="`${formatNumber(paidBookings)} sudah lunas`" />
+      <StatCard label="Hewan" :value="formatNumber(animals?.length ?? 0)" hint="tercatat dengan nomor tag" />
     </div>
 
-    <!-- Stats -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-        <div class="flex items-center gap-4">
-          <div class="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-            <PackageIcon class="w-6 h-6" />
-          </div>
-          <div>
-            <p class="text-sm font-medium text-gray-500">Total Paket</p>
-            <p class="text-2xl font-bold text-gray-900">{{ packages?.total ?? 0 }}</p>
-          </div>
-        </div>
-      </div>
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-        <div class="flex items-center gap-4">
-          <div class="p-3 bg-blue-50 text-blue-600 rounded-xl">
-            <UsersIcon class="w-6 h-6" />
-          </div>
-          <div>
-            <p class="text-sm font-medium text-gray-500">Shohibul Qurban</p>
-            <p class="text-2xl font-bold text-gray-900">{{ bookings?.length ?? 0 }}</p>
-          </div>
-        </div>
-      </div>
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-        <div class="flex items-center gap-4">
-          <div class="p-3 bg-amber-50 text-amber-600 rounded-xl">
-            <DogIcon class="w-6 h-6" />
-          </div>
-          <div>
-            <p class="text-sm font-medium text-gray-500">Hewan Qurban</p>
-            <p class="text-2xl font-bold text-gray-900">{{ animals?.length ?? 0 }}</p>
-          </div>
-        </div>
-      </div>
+    <div class="inline-flex rounded-lg border border-batu bg-white p-1" role="tablist" aria-label="Data qurban">
+      <button
+        v-for="tab in tabs"
+        :key="tab.id"
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === tab.id"
+        class="rounded-md px-4 py-1.5 text-sm font-medium transition-colors"
+        :class="activeTab === tab.id ? 'bg-sajadah text-white' : 'text-jati-muda hover:text-jati'"
+        @click="activeTab = tab.id"
+      >
+        {{ tab.label }}
+      </button>
     </div>
 
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-      <div class="border-b border-gray-100">
-        <nav class="flex gap-4 px-6" aria-label="Tabs">
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            @click="activeTab = tab.id"
-            :class="[
-              activeTab === tab.id
-                ? 'border-emerald-500 text-emerald-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
-              'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
-            ]"
-          >
-            {{ tab.name }}
-          </button>
-        </nav>
-      </div>
-
-      <div class="p-0">
-        <!-- Packages Tab -->
-        <div v-if="activeTab === 'packages'" class="overflow-x-auto">
-          <table class="w-full text-sm text-left">
-            <thead class="text-xs text-gray-500 uppercase bg-gray-50">
-              <tr>
-                <th class="px-6 py-4 font-medium">Nama Paket</th>
-                <th class="px-6 py-4 font-medium">Tipe</th>
-                <th class="px-6 py-4 font-medium">Harga</th>
-                <th class="px-6 py-4 font-medium">Tahun (H)</th>
-                <th class="px-6 py-4 font-medium">Stok</th>
-                <th v-if="canManage" class="px-6 py-4 font-medium text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-100">
-              <tr v-if="isLoadingPackages">
-                <td colspan="6" class="px-6 py-8 text-center text-gray-500">Memuat data...</td>
-              </tr>
-              <tr v-else-if="packageItems.length === 0">
-                <td colspan="6" class="px-6 py-8 text-center text-gray-500">Belum ada paket qurban.</td>
-              </tr>
-              <tr v-else v-for="pkg in packageItems" :key="pkg.id" class="hover:bg-gray-50 transition-colors">
-                <td class="px-6 py-4 font-medium text-gray-900">{{ pkg.name }}</td>
-                <td class="px-6 py-4 text-gray-600">{{ pkg.type }}</td>
-                <td class="px-6 py-4 text-gray-600">{{ formatCurrency(pkg.price) }}</td>
-                <td class="px-6 py-4 text-gray-600">{{ pkg.year_hijri }}</td>
-                <td class="px-6 py-4">
-                  <span :class="[
-                    'px-2 py-1 rounded-full text-xs font-medium',
-                    pkg.stock_remaining > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-                  ]">
-                    Sisa: {{ pkg.stock_remaining }} / {{ pkg.stock_total }}
-                  </span>
-                </td>
-                <td v-if="canManage" class="px-6 py-4 text-right">
-                  <button @click="openEditPackageDialog(pkg)" class="text-blue-600 hover:text-blue-900 p-2 hover:bg-blue-50 rounded-lg transition-colors mr-2" title="Edit">
-                    <EditIcon class="w-4 h-4" />
+    <!-- Packages -->
+    <DataPanel v-if="activeTab === 'packages'">
+      <div v-if="isLoadingPackages" class="p-8 text-center text-sm text-jati-muda">Memuat paket…</div>
+      <EmptyState v-else-if="packageItems.length === 0" :icon="Beef" title="Belum ada paket qurban" description="Tambahkan paket beserta harga dan kuotanya sebelum membuka pendaftaran." />
+      <div v-else class="overflow-x-auto">
+        <table class="tabel min-w-[720px]">
+          <thead>
+            <tr>
+              <th>Paket</th>
+              <th>Jenis</th>
+              <th class="text-right">Harga</th>
+              <th>Tahun</th>
+              <th class="text-right">Sisa kuota</th>
+              <th v-if="canManage" class="w-24"><span class="sr-only">Aksi</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="pkg in packageItems" :key="pkg.id">
+              <td class="font-medium">{{ pkg.name }}</td>
+              <td class="text-jati-muda">{{ PACKAGE_TYPE_LABELS[pkg.type] }}</td>
+              <td class="tabular text-right">{{ formatRupiah(pkg.price) }}</td>
+              <td class="tabular text-jati-muda">{{ pkg.year_hijri }} H</td>
+              <td class="text-right">
+                <StatusBadge :tone="pkg.stock_remaining > 0 ? 'sajadah' : 'bata'" class="tabular">
+                  {{ pkg.stock_remaining }} / {{ pkg.stock_total }}
+                </StatusBadge>
+              </td>
+              <td v-if="canManage">
+                <div class="flex justify-end gap-1">
+                  <button type="button" class="rounded-md p-2 text-jati-muda hover:bg-kapur hover:text-sajadah" :aria-label="`Ubah ${pkg.name}`" title="Ubah" @click="openPackageForm(pkg)">
+                    <Pencil class="size-4" />
                   </button>
-                  <button @click="confirmDeletePackage(pkg)" class="text-red-600 hover:text-red-900 p-2 hover:bg-red-50 rounded-lg transition-colors" title="Hapus">
-                    <TrashIcon class="w-4 h-4" />
+                  <button type="button" class="rounded-md p-2 text-jati-muda hover:bg-bata-muda hover:text-bata" :aria-label="`Hapus ${pkg.name}`" title="Hapus" @click="confirmDeletePackage(pkg)">
+                    <Trash2 class="size-4" />
                   </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </DataPanel>
 
-        <!-- Bookings Tab -->
-        <div v-if="activeTab === 'bookings'" class="p-6">
-          <div v-if="canManage" class="mb-4 flex justify-end">
-            <button @click="openBookingDialog" class="inline-flex items-center justify-center rounded-xl text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 h-10 px-4 transition-colors">
-              <PlusIcon class="w-4 h-4 mr-2" />
-              Pendaftaran Baru
-            </button>
-          </div>
-          <div class="overflow-x-auto border border-gray-100 rounded-xl">
-            <table class="w-full text-sm text-left">
-              <thead class="text-xs text-gray-500 uppercase bg-gray-50">
-                <tr>
-                  <th class="px-6 py-4 font-medium">Tanggal</th>
-                  <th class="px-6 py-4 font-medium">Shohibul</th>
-                  <th class="px-6 py-4 font-medium">Paket</th>
-                  <th class="px-6 py-4 font-medium">Total</th>
-                  <th class="px-6 py-4 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-100">
-                <tr v-if="isLoadingBookings">
-                  <td colspan="5" class="px-6 py-8 text-center text-gray-500">Memuat data...</td>
-                </tr>
-                <tr v-else-if="!bookings || bookings.length === 0">
-                  <td colspan="5" class="px-6 py-8 text-center text-gray-500">Belum ada pendaftaran qurban.</td>
-                </tr>
-                <tr v-else v-for="b in bookings" :key="b.id" class="hover:bg-gray-50 transition-colors">
-                  <td class="px-6 py-4 text-gray-600">{{ new Date(b.booking_date).toLocaleDateString('id-ID') }}</td>
-                  <td class="px-6 py-4 font-medium text-gray-900">{{ b.shohibul_name }}</td>
-                  <td class="px-6 py-4 text-gray-600">{{ b.package_name }}</td>
-                  <td class="px-6 py-4 text-gray-600">{{ formatCurrency(b.total_amount) }}</td>
-                  <td class="px-6 py-4">
-                    <span :class="[
-                      'px-2 py-1 rounded-full text-xs font-medium',
-                      b.payment_status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                    ]">
-                      {{ b.payment_status }}
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+    <!-- Bookings -->
+    <DataPanel v-else-if="activeTab === 'bookings'">
+      <div v-if="isLoadingBookings" class="p-8 text-center text-sm text-jati-muda">Memuat pendaftaran…</div>
+      <EmptyState v-else-if="!bookings || bookings.length === 0" :icon="UserPlus" title="Belum ada shohibul" description="Pendaftaran shohibul qurban akan tampil di sini." />
+      <div v-else class="overflow-x-auto">
+        <table class="tabel min-w-[680px]">
+          <thead>
+            <tr>
+              <th>Tanggal</th>
+              <th>Shohibul</th>
+              <th>Paket</th>
+              <th class="text-right">Total</th>
+              <th>Pembayaran</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="b in bookings" :key="b.id">
+              <td class="whitespace-nowrap text-jati-muda">{{ formatDate(b.booking_date) }}</td>
+              <td class="font-medium">{{ b.shohibul_name }}</td>
+              <td class="text-jati-muda">{{ b.package_name }}</td>
+              <td class="tabular text-right">{{ formatRupiah(b.total_amount) }}</td>
+              <td><StatusBadge :tone="PAYMENT_STATUS[b.payment_status].tone">{{ PAYMENT_STATUS[b.payment_status].label }}</StatusBadge></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </DataPanel>
 
-        <!-- Animals Tab -->
-        <div v-if="activeTab === 'animals'" class="overflow-x-auto">
-          <table class="w-full text-sm text-left">
-            <thead class="text-xs text-gray-500 uppercase bg-gray-50">
-              <tr>
-                <th class="px-6 py-4 font-medium">No. Tag</th>
-                <th class="px-6 py-4 font-medium">Tipe</th>
-                <th class="px-6 py-4 font-medium">Berat (kg)</th>
-                <th class="px-6 py-4 font-medium">Vendor</th>
-                <th class="px-6 py-4 font-medium">Status</th>
-                <th v-if="canManage" class="px-6 py-4 font-medium text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-100">
-              <tr v-if="isLoadingAnimals">
-                <td colspan="6" class="px-6 py-8 text-center text-gray-500">Memuat data...</td>
-              </tr>
-              <tr v-else-if="!animals || animals.length === 0">
-                <td colspan="6" class="px-6 py-8 text-center text-gray-500">Belum ada data hewan qurban.</td>
-              </tr>
-              <tr v-else v-for="animal in animals" :key="animal.id" class="hover:bg-gray-50 transition-colors">
-                <td class="px-6 py-4 font-medium text-gray-900">{{ animal.tag_number }}</td>
-                <td class="px-6 py-4 text-gray-600">{{ animal.type }}</td>
-                <td class="px-6 py-4 text-gray-600">{{ animal.weight }}</td>
-                <td class="px-6 py-4 text-gray-600">{{ animal.vendor_info }}</td>
-                <td class="px-6 py-4">
-                  <span class="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                    {{ animal.status }}
-                  </span>
-                </td>
-                <td v-if="canManage" class="px-6 py-4 text-right">
-                  <button @click="openEditAnimalDialog(animal)" class="text-blue-600 hover:text-blue-900 p-2 hover:bg-blue-50 rounded-lg transition-colors mr-2" title="Edit">
-                    <EditIcon class="w-4 h-4" />
+    <!-- Animals -->
+    <DataPanel v-else>
+      <div v-if="isLoadingAnimals" class="p-8 text-center text-sm text-jati-muda">Memuat data hewan…</div>
+      <EmptyState v-else-if="!animals || animals.length === 0" :icon="Beef" title="Belum ada hewan tercatat" description="Catat hewan dengan nomor tag saat hewan tiba dari penjual." />
+      <div v-else class="overflow-x-auto">
+        <table class="tabel min-w-[700px]">
+          <thead>
+            <tr>
+              <th>No. tag</th>
+              <th>Jenis</th>
+              <th class="text-right">Berat</th>
+              <th>Penjual</th>
+              <th>Status</th>
+              <th v-if="canManage" class="w-24"><span class="sr-only">Aksi</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="animal in animals" :key="animal.id">
+              <td class="font-mono text-sm">{{ animal.tag_number }}</td>
+              <td>{{ ANIMAL_TYPE_LABELS[animal.type] }}</td>
+              <td class="tabular text-right">{{ formatNumber(animal.weight) }} kg</td>
+              <td class="max-w-xs truncate text-jati-muda">{{ animal.vendor_info || '–' }}</td>
+              <td><StatusBadge :tone="ANIMAL_STATUS[animal.status].tone">{{ ANIMAL_STATUS[animal.status].label }}</StatusBadge></td>
+              <td v-if="canManage">
+                <div class="flex justify-end gap-1">
+                  <button type="button" class="rounded-md p-2 text-jati-muda hover:bg-kapur hover:text-sajadah" :aria-label="`Ubah hewan ${animal.tag_number}`" title="Ubah" @click="openAnimalForm(animal)">
+                    <Pencil class="size-4" />
                   </button>
-                  <button @click="confirmDeleteAnimal(animal)" class="text-red-600 hover:text-red-900 p-2 hover:bg-red-50 rounded-lg transition-colors" title="Hapus">
-                    <TrashIcon class="w-4 h-4" />
+                  <button type="button" class="rounded-md p-2 text-jati-muda hover:bg-bata-muda hover:text-bata" :aria-label="`Hapus hewan ${animal.tag_number}`" title="Hapus" @click="confirmDeleteAnimal(animal)">
+                    <Trash2 class="size-4" />
                   </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-    </div>
+    </DataPanel>
 
-    <!-- Package Dialog -->
-    <div v-if="showPackageDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
-      <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
-        <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 class="font-bold text-gray-900">{{ editingPackageId ? 'Edit Paket' : 'Tambah Paket Qurban' }}</h3>
-          <button @click="closePackageDialog" class="text-gray-400 hover:text-gray-600">
-            <XIcon class="w-5 h-5" />
-          </button>
-        </div>
-        <form @submit="submitPackage" class="p-6 space-y-4" novalidate>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Nama Paket</label>
-            <input v-model="packageName" type="text" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all" placeholder="Contoh: Paket A Sapi">
-            <p v-if="packageErrors.name" class="mt-1 text-xs text-red-600">{{ packageErrors.name }}</p>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Tipe</label>
-            <select v-model="packageType" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all">
-              <option value="SAPI">Sapi</option>
-              <option value="SAPI_KOLEKTIF">Sapi Kolektif (1/7)</option>
-              <option value="KAMBING">Kambing</option>
-              <option value="DOMBA">Domba</option>
-            </select>
-          </div>
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Tahun Hijriah</label>
-              <input v-model.number="packageYear" type="number" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all">
-              <p v-if="packageErrors.year_hijri" class="mt-1 text-xs text-red-600">{{ packageErrors.year_hijri }}</p>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Total Stok</label>
-              <input v-model.number="packageStock" type="number" min="1" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all">
-              <p v-if="packageErrors.stock_total" class="mt-1 text-xs text-red-600">{{ packageErrors.stock_total }}</p>
-            </div>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Harga (Rp)</label>
-            <input v-model.number="packagePrice" type="number" min="0" step="1" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all">
-            <p v-if="packageErrors.price" class="mt-1 text-xs text-red-600">{{ packageErrors.price }}</p>
-          </div>
-          <div class="pt-4 flex gap-3">
-            <button type="button" @click="closePackageDialog" class="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">Batal</button>
-            <button type="submit" :disabled="isSavingPackage" class="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50">
-              {{ isSavingPackage ? 'Menyimpan...' : 'Simpan' }}
-            </button>
-          </div>
-        </form>
+    <!-- Package form -->
+    <FormDialog
+      v-model:open="showPackageForm"
+      :title="editingPackage ? 'Ubah paket' : 'Tambah paket'"
+      :submit-label="editingPackage ? 'Simpan perubahan' : 'Tambah paket'"
+      :submitting="savePackageMutation.isPending.value"
+      @submit="submitPackage"
+    >
+      <FormField label="Nama paket" for="package-name" :error="packageErrors.name" required>
+        <input id="package-name" v-model="packageName" type="text" class="field-control" placeholder="Contoh: Kambing premium" :aria-invalid="Boolean(packageErrors.name)" />
+      </FormField>
+      <FormField label="Jenis" for="package-type" required>
+        <select id="package-type" v-model="packageType" class="field-control">
+          <option v-for="(label, value) in PACKAGE_TYPE_LABELS" :key="value" :value="value">{{ label }}</option>
+        </select>
+      </FormField>
+      <div class="grid grid-cols-2 gap-4">
+        <FormField label="Harga (Rp)" for="package-price" :error="packageErrors.price" required>
+          <input id="package-price" v-model.number="packagePrice" type="number" min="1" step="1" class="field-control tabular" :aria-invalid="Boolean(packageErrors.price)" />
+        </FormField>
+        <FormField label="Tahun hijriah" for="package-year" :error="packageErrors.year_hijri" required>
+          <input id="package-year" v-model.number="packageYear" type="number" class="field-control tabular" :aria-invalid="Boolean(packageErrors.year_hijri)" />
+        </FormField>
       </div>
-    </div>
+      <FormField
+        label="Kuota"
+        for="package-stock"
+        :error="packageErrors.stock_total"
+        :hint="editingPackage ? 'Tidak boleh lebih kecil dari jumlah yang sudah terdaftar.' : 'Jumlah shohibul yang bisa mendaftar.'"
+        required
+      >
+        <input id="package-stock" v-model.number="packageStock" type="number" min="1" step="1" class="field-control tabular" :aria-invalid="Boolean(packageErrors.stock_total)" />
+      </FormField>
+    </FormDialog>
 
-    <!-- Animal Dialog -->
-    <div v-if="showAnimalDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
-      <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
-        <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 class="font-bold text-gray-900">{{ editingAnimalId ? 'Edit Hewan' : 'Tambah Hewan' }}</h3>
-          <button @click="closeAnimalDialog" class="text-gray-400 hover:text-gray-600">
-            <XIcon class="w-5 h-5" />
-          </button>
-        </div>
-        <form @submit="submitAnimal" class="p-6 space-y-4" novalidate>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">No Tagging</label>
-            <input v-model="animalTag" type="text" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all">
-            <p v-if="animalErrors.tag_number" class="mt-1 text-xs text-red-600">{{ animalErrors.tag_number }}</p>
-          </div>
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Tipe</label>
-              <select v-model="animalType" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all">
-                <option value="SAPI">Sapi</option>
-                <option value="KAMBING">Kambing</option>
-                <option value="DOMBA">Domba</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Berat (kg)</label>
-              <input v-model.number="animalWeight" type="number" step="0.1" min="0" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all">
-              <p v-if="animalErrors.weight" class="mt-1 text-xs text-red-600">{{ animalErrors.weight }}</p>
-            </div>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Vendor / Penjual</label>
-            <input v-model="animalVendor" type="text" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all">
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select v-model="animalStatus" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all">
-              <option value="AVAILABLE">Tersedia</option>
-              <option value="ASSIGNED">Dialokasikan</option>
-              <option value="SLAUGHTERED">Disembelih</option>
-            </select>
-          </div>
-          <div class="pt-4 flex gap-3">
-            <button type="button" @click="closeAnimalDialog" class="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">Batal</button>
-            <button type="submit" :disabled="isSavingAnimal" class="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50">
-              {{ isSavingAnimal ? 'Menyimpan...' : 'Simpan' }}
-            </button>
-          </div>
-        </form>
+    <!-- Animal form -->
+    <FormDialog
+      v-model:open="showAnimalForm"
+      :title="editingAnimal ? 'Ubah data hewan' : 'Tambah hewan'"
+      :submit-label="editingAnimal ? 'Simpan perubahan' : 'Tambah hewan'"
+      :submitting="saveAnimalMutation.isPending.value"
+      @submit="submitAnimal"
+    >
+      <FormField label="Nomor tag" for="animal-tag" :error="animalErrors.tag_number" required>
+        <input id="animal-tag" v-model="animalTag" type="text" class="field-control font-mono" :aria-invalid="Boolean(animalErrors.tag_number)" />
+      </FormField>
+      <div class="grid grid-cols-2 gap-4">
+        <FormField label="Jenis" for="animal-type" required>
+          <select id="animal-type" v-model="animalType" class="field-control">
+            <option v-for="(label, value) in ANIMAL_TYPE_LABELS" :key="value" :value="value">{{ label }}</option>
+          </select>
+        </FormField>
+        <FormField label="Berat (kg)" for="animal-weight" :error="animalErrors.weight" required>
+          <input id="animal-weight" v-model.number="animalWeight" type="number" min="0" step="0.1" class="field-control tabular" :aria-invalid="Boolean(animalErrors.weight)" />
+        </FormField>
       </div>
-    </div>
+      <FormField label="Status" for="animal-status" required>
+        <select id="animal-status" v-model="animalStatus" class="field-control">
+          <option v-for="(status, value) in ANIMAL_STATUS" :key="value" :value="value">{{ status.label }}</option>
+        </select>
+      </FormField>
+      <FormField label="Penjual" for="animal-vendor" :error="animalErrors.vendor_info">
+        <input id="animal-vendor" v-model="animalVendor" type="text" class="field-control" placeholder="Nama dan kontak penjual" />
+      </FormField>
+    </FormDialog>
 
-    <!-- Booking Dialog -->
-    <div v-if="showBookingDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
-      <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
-        <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 class="font-bold text-gray-900">Pendaftaran Shohibul Qurban</h3>
-          <button @click="closeBookingDialog" class="text-gray-400 hover:text-gray-600">
-            <XIcon class="w-5 h-5" />
-          </button>
-        </div>
-        <form @submit="submitBooking" class="p-6 space-y-4" novalidate>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Shohibul</label>
-            <AsyncJamaahSelect v-model="shohibulId" placeholder="Cari jamaah..." />
-            <p v-if="bookingErrors.shohibul_id" class="mt-1 text-xs text-red-600">{{ bookingErrors.shohibul_id }}</p>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Paket</label>
-            <select v-model.number="bookingPackageId" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all">
-              <option :value="0" disabled>Pilih paket</option>
-              <option v-for="pkg in availablePackages" :key="pkg.id" :value="pkg.id">
-                {{ pkg.name }} ({{ formatCurrency(pkg.price) }}, sisa {{ pkg.stock_remaining }})
-              </option>
-            </select>
-            <p v-if="bookingErrors.package_id" class="mt-1 text-xs text-red-600">{{ bookingErrors.package_id }}</p>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Status Pembayaran</label>
-            <select v-model="paymentStatus" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all">
-              <option value="PENDING">Belum Lunas</option>
-              <option value="PAID">Lunas</option>
-            </select>
-          </div>
-          <div v-if="selectedPackagePrice > 0" class="flex items-center justify-between rounded-lg bg-gray-50 p-3 text-sm">
-            <span class="text-gray-600">Total</span>
-            <span class="font-semibold text-gray-900">{{ formatCurrency(selectedPackagePrice) }}</span>
-          </div>
-          <div class="pt-4 flex gap-3">
-            <button type="button" @click="closeBookingDialog" class="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">Batal</button>
-            <button type="submit" :disabled="createBookingMutation.isPending.value" class="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">
-              {{ createBookingMutation.isPending.value ? 'Menyimpan...' : 'Daftarkan' }}
-            </button>
-          </div>
-        </form>
+    <!-- Booking form -->
+    <FormDialog
+      v-model:open="showBookingForm"
+      title="Daftarkan shohibul"
+      description="Harga mengikuti paket yang dipilih, dan kuota paket berkurang satu."
+      submit-label="Daftarkan"
+      :submitting="createBookingMutation.isPending.value"
+      @submit="submitBooking"
+    >
+      <FormField label="Shohibul" :error="bookingErrors.shohibul_id" required>
+        <AsyncJamaahSelect v-model="shohibulId" placeholder="Cari nama jamaah…" />
+      </FormField>
+      <FormField label="Paket" for="booking-package" :error="bookingErrors.package_id" required>
+        <select id="booking-package" v-model.number="bookingPackageId" class="field-control" :aria-invalid="Boolean(bookingErrors.package_id)">
+          <option :value="0" disabled>Pilih paket</option>
+          <option v-for="pkg in availablePackages" :key="pkg.id" :value="pkg.id">
+            {{ pkg.name }}, {{ formatRupiah(pkg.price) }} (sisa {{ pkg.stock_remaining }})
+          </option>
+        </select>
+      </FormField>
+      <FormField label="Pembayaran" for="booking-payment" required>
+        <select id="booking-payment" v-model="paymentStatus" class="field-control">
+          <option v-for="(status, value) in PAYMENT_STATUS" :key="value" :value="value">{{ status.label }}</option>
+        </select>
+      </FormField>
+      <div v-if="selectedPackagePrice > 0" class="flex items-center justify-between rounded-lg border border-batu bg-kapur/60 px-4 py-3 text-sm">
+        <span class="text-jati-muda">Total</span>
+        <span class="tabular font-semibold">{{ formatRupiah(selectedPackagePrice) }}</span>
       </div>
-    </div>
+    </FormDialog>
   </div>
 </template>
