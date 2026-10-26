@@ -1,31 +1,22 @@
-import apiClient from '../client';
-import type { 
-  ZakatDonation, 
-  ZakatDistribution,
-  CollectZakatPayload, 
-  DistributeZakatPayload, 
-  PaginatedDonationResponse, 
-  PaginatedDistributionResponse 
-} from '../../types/zakat';
+import { request } from '../client';
+import type { Page } from '../../types/api';
+import type { ZakatDistribution, ZakatDonation } from '../../types/zakat';
+import type { CollectZakatPayload, DistributeZakatPayload } from '../../schemas/zakat';
 
 export const zakatService = {
-  async getDonations(page: number = 1, limit: number = 10): Promise<PaginatedDonationResponse> {
-    const response = await apiClient.get<PaginatedDonationResponse>(`/zakat/donations?page=${page}&limit=${limit}`);
-    return response.data;
+  getDonations(page = 1, limit = 10): Promise<Page<ZakatDonation>> {
+    return request<Page<ZakatDonation>>({ method: 'GET', url: '/zakat/donations', params: { page, limit } });
   },
 
-  async getDistributions(page: number = 1, limit: number = 10): Promise<PaginatedDistributionResponse> {
-    const response = await apiClient.get<PaginatedDistributionResponse>(`/zakat/distributions?page=${page}&limit=${limit}`);
-    return response.data;
+  getDistributions(page = 1, limit = 10): Promise<Page<ZakatDistribution>> {
+    return request<Page<ZakatDistribution>>({ method: 'GET', url: '/zakat/distributions', params: { page, limit } });
   },
 
-  async collectZakat(payload: CollectZakatPayload): Promise<ZakatDonation> {
-    const response = await apiClient.post<ZakatDonation>('/zakat/donations', payload);
-    return response.data;
+  collectZakat(payload: CollectZakatPayload): Promise<ZakatDonation> {
+    return request<ZakatDonation>({ method: 'POST', url: '/zakat/donations', data: payload });
   },
 
-  async distributeZakat(payload: DistributeZakatPayload): Promise<ZakatDistribution> {
-    const response = await apiClient.post<ZakatDistribution>('/zakat/distributions', payload);
-    return response.data;
-  }
+  distributeZakat(payload: DistributeZakatPayload): Promise<ZakatDistribution> {
+    return request<ZakatDistribution>({ method: 'POST', url: '/zakat/distributions', data: payload });
+  },
 };

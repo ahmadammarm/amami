@@ -1,4 +1,8 @@
+import type { Permission } from '../lib/permissions';
+
 export type UserRole = 'SUPER_ADMIN' | 'BENDAHARA' | 'TAKMIR' | 'SEKRETARIS' | 'JAMAAH';
+
+export type UserStatus = 'ACTIVE' | 'SUSPENDED' | 'PENDING_PASSWORD_CHANGE';
 
 export interface User {
   id: string;
@@ -6,7 +10,8 @@ export interface User {
   email: string;
   full_name: string;
   role_name: UserRole;
-  status: 'ACTIVE' | 'SUSPENDED' | 'PENDING_PASSWORD_CHANGE';
+  status: UserStatus;
+  permissions: Permission[];
 }
 
 export interface LoginResponse {

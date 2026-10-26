@@ -1,14 +1,15 @@
 package zakat
 
 import (
-	"errors"
-
 	"github.com/ahmadammarm/amami/backend/internal/domain"
+	financeRepo "github.com/ahmadammarm/amami/backend/internal/repository/finance"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 type ZakatRepository interface {
+	FindJamaah(id uuid.UUID) (*domain.Jamaah, error)
 	CollectZakat(donation *domain.ZakatDonation, transaction *domain.Transaction) error
 	DistributeZakat(distribution *domain.ZakatDistribution, transaction *domain.Transaction) error
 	GetDonations(page int, limit int) ([]domain.ZakatDonation, int64, error)
@@ -23,72 +24,45 @@ func NewZakatRepository(db *gorm.DB) ZakatRepository {
 	return &zakatRepository{db: db}
 }
 
-// CollectZakat handles an atomic database transaction to update the fund balance, insert a transaction, and record the zakat donation.
+func (r *zakatRepository) FindJamaah(id uuid.UUID) (*domain.Jamaah, error) {
+	var jamaah domain.Jamaah
+	if err := r.db.First(&jamaah, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &jamaah, nil
+}
+
+// CollectZakat records a donation and, when txModel is set, posts it to the
+// ledger in the same database transaction.
 func (r *zakatRepository) CollectZakat(donation *domain.ZakatDonation, txModel *domain.Transaction) error {
 	return r.db.Transaction(func(dbTx *gorm.DB) error {
 		if txModel != nil {
-			// 1. Lock Fund
-			var fund domain.Fund
-			if err := dbTx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&fund, txModel.FundID).Error; err != nil {
-				return err
-			}
-
-			// 2. Update Balance
-			fund.CurrentBalance += txModel.Amount
-			if err := dbTx.Save(&fund).Error; err != nil {
-				return err
-			}
-
-			// 3. Create Transaction Log
-			if err := dbTx.Create(txModel).Error; err != nil {
+			if err := financeRepo.PostTransaction(dbTx, txModel); err != nil {
 				return err
 			}
 			donation.TransactionID = &txModel.ID
 		}
-
-		// 4. Create Zakat Donation
-		if err := dbTx.Create(donation).Error; err != nil {
+		if err := dbTx.Omit(clause.Associations).Create(donation).Error; err != nil {
 			return err
 		}
-
-		return nil
+		return dbTx.First(&donation.Muzakki, "id = ?", donation.MuzakkiID).Error
 	})
 }
 
-// DistributeZakat handles atomic withdrawal from fund and records distribution.
+// DistributeZakat records a distribution and, when txModel is set, withdraws
+// it from the ledger in the same database transaction.
 func (r *zakatRepository) DistributeZakat(distribution *domain.ZakatDistribution, txModel *domain.Transaction) error {
 	return r.db.Transaction(func(dbTx *gorm.DB) error {
 		if txModel != nil {
-			// 1. Lock Fund
-			var fund domain.Fund
-			if err := dbTx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&fund, txModel.FundID).Error; err != nil {
-				return err
-			}
-
-			// 2. Check Balance
-			if fund.CurrentBalance < txModel.Amount {
-				return errors.New("insufficient fund balance")
-			}
-
-			// 3. Update Balance
-			fund.CurrentBalance -= txModel.Amount
-			if err := dbTx.Save(&fund).Error; err != nil {
-				return err
-			}
-
-			// 4. Create Transaction Log
-			if err := dbTx.Create(txModel).Error; err != nil {
+			if err := financeRepo.PostTransaction(dbTx, txModel); err != nil {
 				return err
 			}
 			distribution.TransactionID = &txModel.ID
 		}
-
-		// 5. Create Distribution
-		if err := dbTx.Create(distribution).Error; err != nil {
+		if err := dbTx.Omit(clause.Associations).Create(distribution).Error; err != nil {
 			return err
 		}
-
-		return nil
+		return dbTx.First(&distribution.Mustahik, "id = ?", distribution.MustahikID).Error
 	})
 }
 
@@ -101,10 +75,13 @@ func (r *zakatRepository) GetDonations(page int, limit int) ([]domain.ZakatDonat
 	}
 
 	offset := (page - 1) * limit
-	if err := r.db.Preload("Muzakki").Preload("Transaction").Joins("LEFT JOIN transactions ON transactions.id = zakat_donations.transaction_id").Order("COALESCE(transactions.created_at, zakat_donations.created_at) desc").Offset(offset).Limit(limit).Find(&donations).Error; err != nil {
+	err := r.db.Preload("Muzakki", unscoped).
+		Order("created_at desc").
+		Offset(offset).Limit(limit).
+		Find(&donations).Error
+	if err != nil {
 		return nil, 0, err
 	}
-
 	return donations, total, nil
 }
 
@@ -117,9 +94,17 @@ func (r *zakatRepository) GetDistributions(page int, limit int) ([]domain.ZakatD
 	}
 
 	offset := (page - 1) * limit
-	if err := r.db.Preload("Mustahik").Preload("Transaction").Order("distributed_at desc").Offset(offset).Limit(limit).Find(&distributions).Error; err != nil {
+	err := r.db.Preload("Mustahik", unscoped).
+		Order("distributed_at desc").
+		Offset(offset).Limit(limit).
+		Find(&distributions).Error
+	if err != nil {
 		return nil, 0, err
 	}
-
 	return distributions, total, nil
+}
+
+// unscoped keeps historical zakat records showing the names of soft-deleted jamaah.
+func unscoped(db *gorm.DB) *gorm.DB {
+	return db.Unscoped()
 }

@@ -2,13 +2,11 @@ package settings
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/ahmadammarm/amami/backend/internal/dto/settings"
 	settingsSvc "github.com/ahmadammarm/amami/backend/internal/service/settings"
 	"github.com/ahmadammarm/amami/backend/pkg/utils"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 type SettingsHandler interface {
@@ -74,17 +72,18 @@ func (h *settingsHandler) GetSystemHealth(c *gin.Context) {
 }
 
 func (h *settingsHandler) GetAuditLogs(c *gin.Context) {
-	userIDVal, _ := c.Get("user_id")
-	roleIDVal, _ := c.Get("role_id")
-	
-	userID := userIDVal.(uuid.UUID)
-	roleID := roleIDVal.(uint)
+	userID, err := utils.CurrentUserID(c)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	roleID, err := utils.CurrentRoleID(c)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
 
-	pageStr := c.DefaultQuery("page", "1")
-	limitStr := c.DefaultQuery("limit", "10")
-	
-	page, _ := strconv.Atoi(pageStr)
-	limit, _ := strconv.Atoi(limitStr)
+	page, limit := utils.ParsePagination(c)
 
 	logs, err := h.svc.GetAuditLogs(page, limit, userID, roleID)
 	if err != nil {
@@ -95,12 +94,11 @@ func (h *settingsHandler) GetAuditLogs(c *gin.Context) {
 }
 
 func (h *settingsHandler) UpdateMosqueProfile(c *gin.Context) {
-	userIDVal, exists := c.Get("user_id")
-	if !exists {
-		utils.ErrorResponse(c, http.StatusUnauthorized, "unauthorized")
+	userID, err := utils.CurrentUserID(c)
+	if err != nil {
+		utils.HandleError(c, err)
 		return
 	}
-	userID := userIDVal.(uuid.UUID)
 
 	var req settings.MosqueProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -117,12 +115,11 @@ func (h *settingsHandler) UpdateMosqueProfile(c *gin.Context) {
 }
 
 func (h *settingsHandler) UpdateSMTPConfig(c *gin.Context) {
-	userIDVal, exists := c.Get("user_id")
-	if !exists {
-		utils.ErrorResponse(c, http.StatusUnauthorized, "unauthorized")
+	userID, err := utils.CurrentUserID(c)
+	if err != nil {
+		utils.HandleError(c, err)
 		return
 	}
-	userID := userIDVal.(uuid.UUID)
 
 	var req settings.SMTPConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

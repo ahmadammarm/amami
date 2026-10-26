@@ -1,19 +1,21 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
-import { 
-  getMosqueProfile, 
-  updateMosqueProfile, 
-  getSMTPConfig, 
-  updateSMTPConfig, 
+import {
+  getMosqueProfile,
+  updateMosqueProfile,
+  getSMTPConfig,
+  updateSMTPConfig,
   testSMTPConnection,
   getSystemHealth,
   getAuditLogs
 } from '../api/services/settings';
+import { getErrorMessage } from '../api/client';
+import { queryKeys } from '../api/queryKeys';
 import { toast } from 'vue-sonner';
-import { type MaybeRef, unref } from 'vue';
+import { computed, type MaybeRef, unref } from 'vue';
 
 export const useMosqueProfileQuery = () => {
   return useQuery({
-    queryKey: ['mosque-profile'],
+    queryKey: queryKeys.settings.profile,
     queryFn: getMosqueProfile,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
@@ -21,22 +23,22 @@ export const useMosqueProfileQuery = () => {
 
 export const useUpdateMosqueProfile = () => {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: updateMosqueProfile,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['mosque-profile'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.profile });
       toast.success('Profile updated successfully');
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || 'Failed to update profile');
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error, 'Failed to update profile'));
     },
   });
 };
 
 export const useSMTPConfigQuery = () => {
   return useQuery({
-    queryKey: ['smtp-config'],
+    queryKey: queryKeys.settings.smtp,
     queryFn: getSMTPConfig,
   });
 };
@@ -46,11 +48,11 @@ export const useUpdateSMTPMutation = () => {
   return useMutation({
     mutationFn: updateSMTPConfig,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['smtp-config'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.smtp });
       toast.success('SMTP configuration updated successfully');
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || 'Failed to update SMTP configuration');
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error, 'Failed to update SMTP configuration'));
     },
   });
 };
@@ -61,15 +63,15 @@ export const useTestSMTPMutation = () => {
     onSuccess: () => {
       toast.success('SMTP connection successful');
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || 'SMTP connection failed');
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error, 'SMTP connection failed'));
     },
   });
 };
 
 export const useSystemHealthQuery = () => {
   return useQuery({
-    queryKey: ['system-health'],
+    queryKey: queryKeys.settings.health,
     queryFn: getSystemHealth,
     refetchInterval: 30000, // Every 30 seconds
   });
@@ -77,7 +79,7 @@ export const useSystemHealthQuery = () => {
 
 export const useAuditLogsQuery = (page: MaybeRef<number> = 1, limit: MaybeRef<number> = 10) => {
   return useQuery({
-    queryKey: ['audit-logs', page, limit],
+    queryKey: computed(() => queryKeys.settings.auditLogs(unref(page), unref(limit))),
     queryFn: () => getAuditLogs(unref(page), unref(limit)),
   });
 };

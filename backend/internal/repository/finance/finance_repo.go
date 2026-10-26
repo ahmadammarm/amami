@@ -4,17 +4,27 @@ import (
 	"errors"
 
 	"github.com/ahmadammarm/amami/backend/internal/domain"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
+// TransactionRow is a ledger row plus the id of the reversal entry that cancels it, if any.
+type TransactionRow struct {
+	domain.Transaction `gorm:"embedded"`
+	ReversedByID       *uuid.UUID
+}
+
+// ReversalBuilder receives the locked original transaction and returns the
+// entry that reverses it, or an error if it must not be reversed.
+type ReversalBuilder func(original *domain.Transaction) (*domain.Transaction, error)
+
 type FinanceRepository interface {
 	CreateFund(fund *domain.Fund) error
 	GetFunds() ([]domain.Fund, error)
-	GetFundByID(id uint) (*domain.Fund, error)
 	CreateTransaction(tx *domain.Transaction) error
-	GetTransactions(page int, limit int) ([]domain.Transaction, int64, error)
-	GetTransactionsByFundID(fundID uint) ([]domain.Transaction, error)
+	ReverseTransaction(originalID uuid.UUID, build ReversalBuilder) (*domain.Transaction, error)
+	GetTransactions(page int, limit int) ([]TransactionRow, int64, error)
 }
 
 type financeRepository struct {
@@ -31,78 +41,74 @@ func (r *financeRepository) CreateFund(fund *domain.Fund) error {
 
 func (r *financeRepository) GetFunds() ([]domain.Fund, error) {
 	var funds []domain.Fund
-	if err := r.db.Find(&funds).Error; err != nil {
+	if err := r.db.Order("id").Find(&funds).Error; err != nil {
 		return nil, err
 	}
 	return funds, nil
 }
 
-func (r *financeRepository) GetFundByID(id uint) (*domain.Fund, error) {
-	var fund domain.Fund
-	if err := r.db.First(&fund, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &fund, nil
-}
-
 func (r *financeRepository) CreateTransaction(tx *domain.Transaction) error {
 	return r.db.Transaction(func(dbTx *gorm.DB) error {
-		// 1. Get the fund and lock it for update
-		var fund domain.Fund
-		if err := dbTx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&fund, tx.FundID).Error; err != nil {
-			return err
-		}
-
-		// 2. Validate sufficient balance if DEBIT
-		if tx.Type == "DEBIT" {
-			if fund.CurrentBalance < tx.Amount {
-				return errors.New("insufficient fund balance")
-			}
-			fund.CurrentBalance -= tx.Amount
-		} else if tx.Type == "CREDIT" {
-			fund.CurrentBalance += tx.Amount
-		} else {
-			return errors.New("invalid transaction type")
-		}
-
-		// 3. Update the fund balance
-		if err := dbTx.Model(&fund).Update("current_balance", fund.CurrentBalance).Error; err != nil {
-			return err
-		}
-
-		// 4. Create the transaction record
-		if err := dbTx.Create(tx).Error; err != nil {
-			return err
-		}
-
-		return nil
+		return PostTransaction(dbTx, tx)
 	})
 }
 
-func (r *financeRepository) GetTransactions(page int, limit int) ([]domain.Transaction, int64, error) {
-	var transactions []domain.Transaction
-	var total int64
+func (r *financeRepository) ReverseTransaction(originalID uuid.UUID, build ReversalBuilder) (*domain.Transaction, error) {
+	var reversal *domain.Transaction
+	err := r.db.Transaction(func(dbTx *gorm.DB) error {
+		var original domain.Transaction
+		if err := dbTx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&original, "id = ?", originalID).Error; err != nil {
+			return err
+		}
 
-	// Count total records
+		var existing int64
+		if err := dbTx.Model(&domain.Transaction{}).
+			Where("reversal_of_id = ?", originalID).Count(&existing).Error; err != nil {
+			return err
+		}
+		if existing > 0 {
+			return domain.ErrAlreadyReversed
+		}
+
+		built, err := build(&original)
+		if err != nil {
+			return err
+		}
+		if err := PostTransaction(dbTx, built); err != nil {
+			return err
+		}
+		reversal = built
+		return nil
+	})
+
+	// The unique index on reversal_of_id catches a concurrent reversal that
+	// slipped past the count check above.
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return nil, domain.ErrAlreadyReversed
+	}
+	if err != nil {
+		return nil, err
+	}
+	return reversal, nil
+}
+
+func (r *financeRepository) GetTransactions(page int, limit int) ([]TransactionRow, int64, error) {
+	var total int64
 	if err := r.db.Model(&domain.Transaction{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
+	var rows []TransactionRow
 	offset := (page - 1) * limit
-	if err := r.db.Order("created_at desc").Offset(offset).Limit(limit).Find(&transactions).Error; err != nil {
+	err := r.db.Model(&domain.Transaction{}).
+		Select("transactions.*, reversal.id AS reversed_by_id").
+		Joins("LEFT JOIN transactions AS reversal ON reversal.reversal_of_id = transactions.id").
+		Order("transactions.created_at desc").
+		Offset(offset).Limit(limit).
+		Scan(&rows).Error
+	if err != nil {
 		return nil, 0, err
 	}
-	
-	return transactions, total, nil
-}
-
-func (r *financeRepository) GetTransactionsByFundID(fundID uint) ([]domain.Transaction, error) {
-	var transactions []domain.Transaction
-	if err := r.db.Where("fund_id = ?", fundID).Order("created_at desc").Find(&transactions).Error; err != nil {
-		return nil, err
-	}
-	return transactions, nil
+	return rows, total, nil
 }

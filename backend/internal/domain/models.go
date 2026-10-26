@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 // --- 1. Core & Auth ---
@@ -29,17 +30,18 @@ type RolePermission struct {
 }
 
 type User struct {
-	ID           uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	Username     string     `gorm:"type:varchar(50);uniqueIndex;not null"`
-	Email        string     `gorm:"type:varchar(100);uniqueIndex;not null"`
-	PasswordHash string     `gorm:"type:text;not null"`
-	RoleID       uint       `gorm:"index"`
-	Role         Role       `gorm:"constraint:OnDelete:RESTRICT;"`
-	JamaahProfile *Jamaah   `gorm:"foreignKey:UserID"`
-	Status       string     `gorm:"size:50;default:'ACTIVE'"`
-	LastLoginAt  *time.Time
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID            uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	Username      string     `gorm:"type:varchar(50);not null;uniqueIndex:idx_users_username,where:deleted_at IS NULL"`
+	Email         string     `gorm:"type:varchar(100);not null;uniqueIndex:idx_users_email,where:deleted_at IS NULL"`
+	PasswordHash  string     `gorm:"type:text;not null"`
+	RoleID        uint       `gorm:"index"`
+	Role          Role       `gorm:"constraint:OnDelete:RESTRICT;"`
+	JamaahProfile *Jamaah    `gorm:"foreignKey:UserID"`
+	Status        UserStatus `gorm:"size:50;default:'ACTIVE'"`
+	LastLoginAt   *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	DeletedAt     gorm.DeletedAt `gorm:"index"`
 }
 
 // --- 2. Jamaah & Profiles ---
@@ -52,9 +54,10 @@ type Jamaah struct {
 	Phone         string     `gorm:"type:varchar(20)"`
 	Address       string     `gorm:"type:text"`
 	IsMustahik    bool       `gorm:"default:false;index"`
-	MustahikScore float64    `gorm:"type:decimal(5,2);default:0.00"`
+	MustahikScore float64    `gorm:"type:decimal(5,2);default:0.00;index"`
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	DeletedAt     gorm.DeletedAt `gorm:"index"`
 }
 
 // --- 3. Finance (The Immutable Ledger) ---
@@ -69,17 +72,21 @@ type Fund struct {
 }
 
 type Transaction struct {
-	ID          uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	FundID      uint           `gorm:"index:idx_fund_created,priority:1;not null"` // Composite Index Part 1
-	Fund        Fund           `gorm:"constraint:OnDelete:RESTRICT;"`
-	Type        string         `gorm:"type:varchar(10);not null"` // DEBIT/CREDIT
-	Amount      int64          `gorm:"type:bigint;not null;check:amount > 0"`
-	Category    string         `gorm:"type:varchar(30);not null;index"`
-	ReferenceID *uuid.UUID     `gorm:"type:uuid;index"` // Polymorphic relation ID
-	Metadata    datatypes.JSON `gorm:"type:jsonb"`
-	CreatedBy   uuid.UUID      `gorm:"type:uuid;not null;index"`
-	Creator     User           `gorm:"foreignKey:CreatedBy;constraint:OnDelete:RESTRICT;"`
-	CreatedAt   time.Time      `gorm:"index:idx_fund_created,priority:2;index"` // Composite Index Part 2 & Standalone
+	ID          uuid.UUID       `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	FundID      uint            `gorm:"index:idx_fund_created,priority:1;not null"` // Composite Index Part 1
+	Fund        Fund            `gorm:"constraint:OnDelete:RESTRICT;"`
+	Type        TransactionType `gorm:"type:varchar(10);not null"`
+	Amount      int64           `gorm:"type:bigint;not null;check:amount > 0"`
+	Category    string          `gorm:"type:varchar(30);not null;index"`
+	Description string          `gorm:"type:varchar(255)"`
+	ReferenceID *uuid.UUID      `gorm:"type:uuid;index"` // Polymorphic relation ID
+	// ReversalOfID links a reversal entry to the transaction it cancels. The unique
+	// index guarantees a transaction can be reversed at most once.
+	ReversalOfID *uuid.UUID     `gorm:"type:uuid;uniqueIndex"`
+	Metadata     datatypes.JSON `gorm:"type:jsonb"`
+	CreatedBy    uuid.UUID      `gorm:"type:uuid;not null;index"`
+	Creator      User           `gorm:"foreignKey:CreatedBy;constraint:OnDelete:RESTRICT;"`
+	CreatedAt    time.Time      `gorm:"index:idx_fund_created,priority:2;index"` // Composite Index Part 2 & Standalone
 }
 
 // --- 4. Zakat Module ---
@@ -92,45 +99,49 @@ type ZakatDonation struct {
 	Muzakki       Jamaah         `gorm:"foreignKey:MuzakkiID;constraint:OnDelete:RESTRICT;"`
 	ZakatType     string         `gorm:"type:varchar(30);not null"`
 	AmountOrQty   float64        `gorm:"column:amount;type:decimal(12,2);not null;default:0"`
-	Unit          string         `gorm:"type:varchar(20);default:'IDR'"` // IDR, KG, LITER
+	Unit          ZakatUnit      `gorm:"type:varchar(20);default:'IDR'"`
 	Description   string         `gorm:"type:text"`
 	Metadata      datatypes.JSON `gorm:"type:jsonb"`
 	CreatedAt     time.Time      `gorm:"default:now()"`
 }
 
 type MustahikData struct {
-	ID              uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	JamaahID        uuid.UUID `gorm:"type:uuid;uniqueIndex;not null"`
-	Jamaah          Jamaah    `gorm:"constraint:OnDelete:RESTRICT;"`
-	TotalIncome     int64     `gorm:"type:bigint"`
-	DependentsCount int       `gorm:"type:int"`
-	HouseStatus     string    `gorm:"type:varchar(50)"`
-	CriteriaNotes   string    `gorm:"type:text"`
+	ID              uuid.UUID   `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	JamaahID        uuid.UUID   `gorm:"type:uuid;uniqueIndex;not null"`
+	Jamaah          Jamaah      `gorm:"constraint:OnDelete:RESTRICT;"`
+	TotalIncome     int64       `gorm:"type:bigint"` // monthly household income in IDR
+	DependentsCount int         `gorm:"type:int"`
+	HouseStatus     HouseStatus `gorm:"type:varchar(50)"`
+	HasDisability   bool        `gorm:"default:false"`
+	CriteriaNotes   string      `gorm:"type:text"`
+	SurveyedBy      *uuid.UUID  `gorm:"type:uuid"`
+	Surveyor        *User       `gorm:"foreignKey:SurveyedBy;constraint:OnDelete:SET NULL;"`
 	UpdatedAt       time.Time
 }
 
 type ZakatDistribution struct {
-	ID            uuid.UUID   `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	TransactionID *uuid.UUID  `gorm:"type:uuid;index"`
+	ID            uuid.UUID    `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	TransactionID *uuid.UUID   `gorm:"type:uuid;index"`
 	Transaction   *Transaction `gorm:"constraint:OnDelete:RESTRICT;"`
-	MustahikID    uuid.UUID   `gorm:"type:uuid;index;not null"`
-	Mustahik      Jamaah      `gorm:"foreignKey:MustahikID;constraint:OnDelete:RESTRICT;"`
-	AmountOrQty   float64     `gorm:"column:amount;type:decimal(12,2);not null;default:0"`
-	Unit          string      `gorm:"type:varchar(20);default:'IDR'"`
-	Description   string      `gorm:"type:text"`
-	DistributedAt time.Time   `gorm:"default:now()"`
+	MustahikID    uuid.UUID    `gorm:"type:uuid;index;not null"`
+	Mustahik      Jamaah       `gorm:"foreignKey:MustahikID;constraint:OnDelete:RESTRICT;"`
+	AmountOrQty   float64      `gorm:"column:amount;type:decimal(12,2);not null;default:0"`
+	Unit          ZakatUnit    `gorm:"type:varchar(20);default:'IDR'"`
+	Description   string       `gorm:"type:text"`
+	DistributedAt time.Time    `gorm:"default:now()"`
 }
 
 // --- 5. Kurban Module ---
 
 type QurbanPackage struct {
-	ID             uint   `gorm:"primaryKey" json:"id"`
-	Name           string `gorm:"type:varchar(100);not null" json:"name"`
-	Type           string `gorm:"type:varchar(20)" json:"type"`
-	Price          int64  `gorm:"type:bigint;not null" json:"price"`
-	YearHijri      int    `gorm:"index;not null" json:"year_hijri"`
-	StockTotal     int    `json:"stock_total"`
-	StockRemaining int    `gorm:"check:stock_remaining >= 0" json:"stock_remaining"`
+	ID             uint           `gorm:"primaryKey" json:"id"`
+	Name           string         `gorm:"type:varchar(100);not null" json:"name"`
+	Type           string         `gorm:"type:varchar(20)" json:"type"`
+	Price          int64          `gorm:"type:bigint;not null" json:"price"`
+	YearHijri      int            `gorm:"index;not null" json:"year_hijri"`
+	StockTotal     int            `json:"stock_total"`
+	StockRemaining int            `gorm:"check:stock_remaining >= 0" json:"stock_remaining"`
+	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 type QurbanBooking struct {
@@ -140,30 +151,32 @@ type QurbanBooking struct {
 	PackageID     uint           `gorm:"index;not null" json:"package_id"`
 	Package       QurbanPackage  `gorm:"constraint:OnDelete:RESTRICT;" json:"package"`
 	BookingDate   time.Time      `gorm:"default:now()" json:"booking_date"`
-	PaymentStatus string         `gorm:"type:varchar(30)" json:"payment_status"`
+	PaymentStatus PaymentStatus  `gorm:"type:varchar(30)" json:"payment_status"`
 	TotalAmount   int64          `gorm:"type:bigint" json:"total_amount"`
 	Metadata      datatypes.JSON `gorm:"type:jsonb" json:"metadata"`
 }
 
 type QurbanAnimal struct {
-	ID         uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	TagNumber  string    `gorm:"type:varchar(50);uniqueIndex;not null" json:"tag_number"`
-	Type       string    `gorm:"type:varchar(20)" json:"type"`
-	Weight     float64   `gorm:"type:decimal(6,2)" json:"weight"`
-	Status     string    `gorm:"type:varchar(30);index" json:"status"`
-	VendorInfo string    `gorm:"type:text" json:"vendor_info"`
+	ID         uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	TagNumber  string         `gorm:"type:varchar(50);not null;uniqueIndex:idx_qurban_animals_tag_number,where:deleted_at IS NULL" json:"tag_number"`
+	Type       string         `gorm:"type:varchar(20)" json:"type"`
+	Weight     float64        `gorm:"type:decimal(6,2)" json:"weight"`
+	Status     AnimalStatus   `gorm:"type:varchar(30);index" json:"status"`
+	VendorInfo string         `gorm:"type:text" json:"vendor_info"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // --- 6. Inventory Module ---
 
 type Asset struct {
-	ID            uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	Name          string     `gorm:"type:varchar(255);index;not null" json:"name"`
-	SKU           string     `gorm:"type:varchar(50);uniqueIndex" json:"sku"`
-	PurchaseDate  *time.Time `json:"purchase_date"`
-	PurchasePrice int64      `gorm:"type:bigint" json:"purchase_price"`
-	CurrentStatus string     `gorm:"type:varchar(30)" json:"current_status"`
-	Location      string     `gorm:"type:varchar(100)" json:"location"`
+	ID            uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	Name          string         `gorm:"type:varchar(255);index;not null" json:"name"`
+	SKU           string         `gorm:"type:varchar(50);uniqueIndex:idx_assets_sku,where:deleted_at IS NULL" json:"sku"`
+	PurchaseDate  *time.Time     `json:"purchase_date"`
+	PurchasePrice int64          `gorm:"type:bigint" json:"purchase_price"`
+	CurrentStatus AssetStatus    `gorm:"type:varchar(30)" json:"current_status"`
+	Location      string         `gorm:"type:varchar(100)" json:"location"`
+	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 type AssetLoan struct {
@@ -200,26 +213,30 @@ type Memo struct {
 // --- 8. Logistics & Event Module ---
 
 type Agenda struct {
-	ID          uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	Title       string     `gorm:"type:varchar(200);not null" json:"title"`
-	Description string     `gorm:"type:text" json:"description"`
-	Day         string     `gorm:"type:varchar(20);not null" json:"day"`
-	Time        string     `gorm:"type:varchar(20);not null" json:"time"`
-	Location    string     `gorm:"type:varchar(100)" json:"location"`
-	Status      string     `gorm:"type:varchar(30);index" json:"status"`
-	CreatedByID *uuid.UUID `gorm:"type:uuid" json:"created_by_id"`
-	Creator     *User      `gorm:"foreignKey:CreatedByID;constraint:OnDelete:SET NULL;" json:"creator"`
+	ID          uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	Title       string         `gorm:"type:varchar(200);not null" json:"title"`
+	Description string         `gorm:"type:text" json:"description"`
+	Day         string         `gorm:"type:varchar(20);not null" json:"day"`
+	Time        string         `gorm:"type:varchar(20);not null" json:"time"`
+	Location    string         `gorm:"type:varchar(100)" json:"location"`
+	Status      AgendaStatus   `gorm:"type:varchar(30);index" json:"status"`
+	CreatedByID *uuid.UUID     `gorm:"type:uuid" json:"created_by_id"`
+	Creator     *User          `gorm:"foreignKey:CreatedByID;constraint:OnDelete:SET NULL;" json:"creator"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 type AgendaDocumentation struct {
-	ID         uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	AgendaID   uuid.UUID `gorm:"type:uuid;index;not null" json:"agenda_id"`
-	Agenda     Agenda    `gorm:"constraint:OnDelete:CASCADE;" json:"agenda"`
-	FileURL    string    `gorm:"type:text;not null" json:"file_url"`
-	FileType   string    `gorm:"type:varchar(50)" json:"file_type"`
+	ID         uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	AgendaID   uuid.UUID  `gorm:"type:uuid;index;not null" json:"agenda_id"`
+	Agenda     Agenda     `gorm:"constraint:OnDelete:CASCADE;" json:"agenda"`
+	StorageKey string     `gorm:"type:text;not null" json:"-"`
+	FileURL    string     `gorm:"type:text;not null" json:"file_url"`
+	FileName   string     `gorm:"type:varchar(255)" json:"file_name"`
+	FileType   string     `gorm:"type:varchar(50)" json:"file_type"`
+	FileSize   int64      `json:"file_size"`
 	UploadedBy *uuid.UUID `gorm:"type:uuid" json:"uploaded_by"`
-	Uploader   *User     `gorm:"foreignKey:UploadedBy;constraint:OnDelete:SET NULL;" json:"uploader"`
-	UploadedAt time.Time `gorm:"default:now()" json:"uploaded_at"`
+	Uploader   *User      `gorm:"foreignKey:UploadedBy;constraint:OnDelete:SET NULL;" json:"uploader"`
+	UploadedAt time.Time  `gorm:"default:now()" json:"uploaded_at"`
 }
 
 type AuditLog struct {

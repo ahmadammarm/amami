@@ -6,24 +6,25 @@ import (
 	"github.com/ahmadammarm/amami/backend/internal/domain"
 	qurbanDto "github.com/ahmadammarm/amami/backend/internal/dto/qurban"
 	qurbanRepo "github.com/ahmadammarm/amami/backend/internal/repository/qurban"
+	"github.com/ahmadammarm/amami/backend/pkg/apperror"
+	"github.com/ahmadammarm/amami/backend/pkg/utils"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type QurbanService interface {
-	CreatePackage(req qurbanDto.CreatePackageRequest) (*domain.QurbanPackage, error)
-	GetAllPackages(page, limit int) ([]domain.QurbanPackage, int64, error)
-	UpdatePackage(id uint, req qurbanDto.CreatePackageRequest) (*domain.QurbanPackage, error)
+	CreatePackage(req qurbanDto.PackageRequest) (*qurbanDto.PackageResponse, error)
+	GetAllPackages(page, limit int) (utils.Page[qurbanDto.PackageResponse], error)
+	UpdatePackage(id uint, req qurbanDto.PackageRequest) (*qurbanDto.PackageResponse, error)
 	DeletePackage(id uint) error
 
-	CreateBooking(req qurbanDto.CreateBookingRequest) (*domain.QurbanBooking, error)
-	GetBookings() ([]domain.QurbanBooking, error)
+	CreateBooking(req qurbanDto.CreateBookingRequest) (*qurbanDto.BookingResponse, error)
+	GetBookings() ([]qurbanDto.BookingResponse, error)
 
-	CreateAnimal(req qurbanDto.CreateAnimalRequest) (*domain.QurbanAnimal, error)
-	GetAnimals() ([]domain.QurbanAnimal, error)
-	UpdateAnimal(id string, req qurbanDto.CreateAnimalRequest) (*domain.QurbanAnimal, error)
-	DeleteAnimal(id string) error
+	CreateAnimal(req qurbanDto.AnimalRequest) (*qurbanDto.AnimalResponse, error)
+	GetAnimals() ([]qurbanDto.AnimalResponse, error)
+	UpdateAnimal(id uuid.UUID, req qurbanDto.AnimalRequest) (*qurbanDto.AnimalResponse, error)
+	DeleteAnimal(id uuid.UUID) error
 }
 
 type qurbanService struct {
@@ -34,7 +35,7 @@ func NewQurbanService(repo qurbanRepo.QurbanRepository) QurbanService {
 	return &qurbanService{repo}
 }
 
-func (s *qurbanService) CreatePackage(req qurbanDto.CreatePackageRequest) (*domain.QurbanPackage, error) {
+func (s *qurbanService) CreatePackage(req qurbanDto.PackageRequest) (*qurbanDto.PackageResponse, error) {
 	pkg := &domain.QurbanPackage{
 		Name:           req.Name,
 		Type:           req.Type,
@@ -45,135 +46,163 @@ func (s *qurbanService) CreatePackage(req qurbanDto.CreatePackageRequest) (*doma
 	}
 
 	if err := s.repo.CreatePackage(pkg); err != nil {
-		return nil, err
+		return nil, apperror.Internal("failed to create package", err)
 	}
-	return pkg, nil
+
+	res := qurbanDto.ToPackageResponse(pkg)
+	return &res, nil
 }
 
-func (s *qurbanService) GetAllPackages(page, limit int) ([]domain.QurbanPackage, int64, error) {
-	return s.repo.GetAllPackages(page, limit)
+func (s *qurbanService) GetAllPackages(page, limit int) (utils.Page[qurbanDto.PackageResponse], error) {
+	pkgs, total, err := s.repo.GetAllPackages(page, limit)
+	if err != nil {
+		return utils.Page[qurbanDto.PackageResponse]{}, apperror.Internal("failed to fetch packages", err)
+	}
+
+	res := make([]qurbanDto.PackageResponse, 0, len(pkgs))
+	for i := range pkgs {
+		res = append(res, qurbanDto.ToPackageResponse(&pkgs[i]))
+	}
+	return utils.NewPage(res, total, page, limit), nil
 }
 
-func (s *qurbanService) UpdatePackage(id uint, req qurbanDto.CreatePackageRequest) (*domain.QurbanPackage, error) {
+func (s *qurbanService) UpdatePackage(id uint, req qurbanDto.PackageRequest) (*qurbanDto.PackageResponse, error) {
 	pkg, err := s.repo.GetPackageByID(id)
 	if err != nil {
-		return nil, errors.New("package not found")
+		return nil, notFoundOr(err, "package not found", "failed to fetch package")
+	}
+
+	// Changing the total shifts the remaining stock by the same amount, so
+	// units already booked stay booked.
+	remaining := pkg.StockRemaining + (req.StockTotal - pkg.StockTotal)
+	if remaining < 0 {
+		return nil, apperror.Conflict("stock total cannot be lower than the number of units already booked")
 	}
 
 	pkg.Name = req.Name
 	pkg.Type = req.Type
 	pkg.Price = req.Price
 	pkg.YearHijri = req.YearHijri
-	// Prevent negative stock adjustments loosely, or assume admin knows better.
-	stockDiff := req.StockTotal - pkg.StockTotal
 	pkg.StockTotal = req.StockTotal
-	pkg.StockRemaining += stockDiff
-
-	if pkg.StockRemaining < 0 {
-		return nil, errors.New("cannot update stock total resulting in negative remaining stock")
-	}
+	pkg.StockRemaining = remaining
 
 	if err := s.repo.UpdatePackage(pkg); err != nil {
-		return nil, err
+		return nil, apperror.Internal("failed to update package", err)
 	}
-	return pkg, nil
+
+	res := qurbanDto.ToPackageResponse(pkg)
+	return &res, nil
 }
 
 func (s *qurbanService) DeletePackage(id uint) error {
-	return s.repo.DeletePackage(id)
+	if err := s.repo.DeletePackage(id); err != nil {
+		return notFoundOr(err, "package not found", "failed to delete package")
+	}
+	return nil
 }
 
-func (s *qurbanService) CreateBooking(req qurbanDto.CreateBookingRequest) (*domain.QurbanBooking, error) {
-	var newBooking *domain.QurbanBooking
+func (s *qurbanService) CreateBooking(req qurbanDto.CreateBookingRequest) (*qurbanDto.BookingResponse, error) {
+	booking := &domain.QurbanBooking{
+		ShohibulID:    req.ShohibulID,
+		PackageID:     req.PackageID,
+		PaymentStatus: req.PaymentStatus,
+	}
 
-	err := s.repo.Transaction(func(tx *gorm.DB) error {
-		var pkg domain.QurbanPackage
-		// Select for update to prevent concurrent booking race conditions
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&pkg, "id = ?", req.PackageID).Error; err != nil {
-			return errors.New("package not found")
+	if err := s.repo.CreateBooking(booking); err != nil {
+		switch {
+		case errors.Is(err, domain.ErrPackageNotFound):
+			return nil, apperror.Validation(err.Error())
+		case errors.Is(err, domain.ErrPackageOutOfStock):
+			return nil, apperror.Conflict(err.Error())
+		case errors.Is(err, gorm.ErrForeignKeyViolated):
+			return nil, apperror.Validation("shohibul not found")
+		default:
+			return nil, apperror.Internal("failed to create booking", err)
 		}
+	}
 
-		if pkg.StockRemaining <= 0 {
-			return errors.New("package out of stock")
-		}
+	res := qurbanDto.ToBookingResponse(booking)
+	return &res, nil
+}
 
-		// Decrement stock
-		pkg.StockRemaining -= 1
-		if err := tx.Save(&pkg).Error; err != nil {
-			return err
-		}
-
-		newBooking = &domain.QurbanBooking{
-			ShohibulID:    req.ShohibulID,
-			PackageID:     req.PackageID,
-			PaymentStatus: req.PaymentStatus,
-			TotalAmount:   req.TotalAmount,
-		}
-
-		if err := tx.Create(newBooking).Error; err != nil {
-			return err
-		}
-
-		return nil
-	})
-
+func (s *qurbanService) GetBookings() ([]qurbanDto.BookingResponse, error) {
+	bookings, err := s.repo.GetBookings()
 	if err != nil {
-		return nil, err
+		return nil, apperror.Internal("failed to fetch bookings", err)
 	}
 
-	return newBooking, nil
-}
-
-func (s *qurbanService) GetBookings() ([]domain.QurbanBooking, error) {
-	return s.repo.GetBookings()
-}
-
-func (s *qurbanService) CreateAnimal(req qurbanDto.CreateAnimalRequest) (*domain.QurbanAnimal, error) {
-	animal := &domain.QurbanAnimal{
-		TagNumber:  req.TagNumber,
-		Type:       req.Type,
-		Weight:     req.Weight,
-		Status:     req.Status,
-		VendorInfo: req.VendorInfo,
+	res := make([]qurbanDto.BookingResponse, 0, len(bookings))
+	for i := range bookings {
+		res = append(res, qurbanDto.ToBookingResponse(&bookings[i]))
 	}
+	return res, nil
+}
+
+func (s *qurbanService) CreateAnimal(req qurbanDto.AnimalRequest) (*qurbanDto.AnimalResponse, error) {
+	animal := &domain.QurbanAnimal{}
+	applyAnimalRequest(animal, req)
 
 	if err := s.repo.CreateAnimal(animal); err != nil {
-		return nil, err
+		return nil, mapAnimalWriteError(err, "failed to create animal")
 	}
-	return animal, nil
+
+	res := qurbanDto.ToAnimalResponse(animal)
+	return &res, nil
 }
 
-func (s *qurbanService) GetAnimals() ([]domain.QurbanAnimal, error) {
-	return s.repo.GetAnimals()
+func (s *qurbanService) GetAnimals() ([]qurbanDto.AnimalResponse, error) {
+	animals, err := s.repo.GetAnimals()
+	if err != nil {
+		return nil, apperror.Internal("failed to fetch animals", err)
+	}
+
+	res := make([]qurbanDto.AnimalResponse, 0, len(animals))
+	for i := range animals {
+		res = append(res, qurbanDto.ToAnimalResponse(&animals[i]))
+	}
+	return res, nil
 }
 
-func (s *qurbanService) UpdateAnimal(id string, req qurbanDto.CreateAnimalRequest) (*domain.QurbanAnimal, error) {
-	uid, err := uuid.Parse(id)
+func (s *qurbanService) UpdateAnimal(id uuid.UUID, req qurbanDto.AnimalRequest) (*qurbanDto.AnimalResponse, error) {
+	animal, err := s.repo.GetAnimalByID(id)
 	if err != nil {
-		return nil, errors.New("invalid animal id")
+		return nil, notFoundOr(err, "animal not found", "failed to fetch animal")
 	}
 
-	animal, err := s.repo.GetAnimalByID(uid.String())
-	if err != nil {
-		return nil, errors.New("animal not found")
+	applyAnimalRequest(animal, req)
+	if err := s.repo.UpdateAnimal(animal); err != nil {
+		return nil, mapAnimalWriteError(err, "failed to update animal")
 	}
 
+	res := qurbanDto.ToAnimalResponse(animal)
+	return &res, nil
+}
+
+func (s *qurbanService) DeleteAnimal(id uuid.UUID) error {
+	if err := s.repo.DeleteAnimal(id); err != nil {
+		return notFoundOr(err, "animal not found", "failed to delete animal")
+	}
+	return nil
+}
+
+func applyAnimalRequest(animal *domain.QurbanAnimal, req qurbanDto.AnimalRequest) {
 	animal.TagNumber = req.TagNumber
 	animal.Type = req.Type
 	animal.Weight = req.Weight
 	animal.Status = req.Status
 	animal.VendorInfo = req.VendorInfo
-
-	if err := s.repo.UpdateAnimal(animal); err != nil {
-		return nil, err
-	}
-	return animal, nil
 }
 
-func (s *qurbanService) DeleteAnimal(id string) error {
-	uid, err := uuid.Parse(id)
-	if err != nil {
-		return err
+func mapAnimalWriteError(err error, msg string) error {
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return apperror.Conflict("an animal with this tag number already exists")
 	}
-	return s.repo.DeleteAnimal(uid.String())
+	return apperror.Internal(msg, err)
+}
+
+func notFoundOr(err error, notFoundMsg, internalMsg string) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return apperror.NotFound(notFoundMsg)
+	}
+	return apperror.Internal(internalMsg, err)
 }

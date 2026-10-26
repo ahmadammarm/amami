@@ -1,40 +1,25 @@
-import apiClient from '../client';
-import type { InviteUserRequest } from '../../types/user';
+import { request } from '../client';
+import type { Page } from '../../types/api';
+import type { InviteUserRequest, InviteUserResponse, ManageableUserStatus, Role, UserResponse } from '../../types/user';
 
 export const userService = {
-  getAllUsers: async (page = 1, limit = 100) => {
-    const response = await apiClient.get(`/users?page=${page}&limit=${limit}`);
-    return response.data.data;
+  getAllUsers(page = 1, limit = 100): Promise<Page<UserResponse>> {
+    return request<Page<UserResponse>>({ method: 'GET', url: '/users', params: { page, limit } });
   },
 
-  inviteUser: async (data: InviteUserRequest) => {
-    const response = await apiClient.post('/users/invite', data);
-    return response.data.data;
+  getRoles(): Promise<Role[]> {
+    return request<Role[]>({ method: 'GET', url: '/users/roles' });
   },
 
-  updateUserStatus: async (id: string, status: string) => {
-    const response = await apiClient.patch(`/users/${id}/status`, { status });
-    return response.data.data;
+  inviteUser(data: InviteUserRequest): Promise<InviteUserResponse> {
+    return request<InviteUserResponse>({ method: 'POST', url: '/users/invite', data });
   },
 
-  deleteUser: async (id: string) => {
-    const response = await apiClient.delete(`/users/${id}`);
-    return response.data.data;
+  updateUserStatus(id: string, status: ManageableUserStatus): Promise<void> {
+    return request<void>({ method: 'PATCH', url: `/users/${id}/status`, data: { status } });
   },
 
-  getRoles: async () => {
-    // We don't have a dedicated roles endpoint yet, but for now we can hardcode 
-    // or wait for a specific endpoint. Let's assume we might need one or just 
-    // fetch them if we had one. Actually, let's just hardcode the IDs from seeder for now
-    // or better, create a small endpoint if missing.
-    // For this plan, I'll assume we can use the ID from seeder:
-    // 1: SUPER_ADMIN, 2: BENDAHARA, 3: TAKMIR, 4: SEKRETARIS, 5: JAMAAH
-    return [
-      { id: 1, name: 'SUPER_ADMIN' },
-      { id: 2, name: 'BENDAHARA' },
-      { id: 3, name: 'TAKMIR' },
-      { id: 4, name: 'SEKRETARIS' },
-      { id: 5, name: 'JAMAAH' },
-    ];
-  }
+  deleteUser(id: string): Promise<void> {
+    return request<void>({ method: 'DELETE', url: `/users/${id}` });
+  },
 };

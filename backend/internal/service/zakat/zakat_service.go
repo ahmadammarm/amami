@@ -1,19 +1,24 @@
 package zakat
 
 import (
-	"time"
+	"errors"
+	"math"
 
 	"github.com/ahmadammarm/amami/backend/internal/domain"
 	"github.com/ahmadammarm/amami/backend/internal/dto/zakat"
 	zakatRepo "github.com/ahmadammarm/amami/backend/internal/repository/zakat"
+	financeSvc "github.com/ahmadammarm/amami/backend/internal/service/finance"
+	"github.com/ahmadammarm/amami/backend/pkg/apperror"
+	"github.com/ahmadammarm/amami/backend/pkg/utils"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type ZakatService interface {
 	CollectZakat(req zakat.CollectZakatRequest, userID uuid.UUID) (*zakat.ZakatDonationResponse, error)
 	DistributeZakat(req zakat.DistributeZakatRequest, userID uuid.UUID) (*zakat.ZakatDistributionResponse, error)
-	GetDonations(page int, limit int) (*zakat.PaginatedDonationResponse, error)
-	GetDistributions(page int, limit int) (*zakat.PaginatedDistributionResponse, error)
+	GetDonations(page int, limit int) (utils.Page[zakat.ZakatDonationResponse], error)
+	GetDistributions(page int, limit int) (utils.Page[zakat.ZakatDistributionResponse], error)
 }
 
 type zakatService struct {
@@ -25,15 +30,9 @@ func NewZakatService(repo zakatRepo.ZakatRepository) ZakatService {
 }
 
 func (s *zakatService) CollectZakat(req zakat.CollectZakatRequest, userID uuid.UUID) (*zakat.ZakatDonationResponse, error) {
-	var txModel *domain.Transaction
-	if req.FundID != nil {
-		txModel = &domain.Transaction{
-			FundID:    *req.FundID,
-			Type:      "CREDIT",
-			Amount:    int64(req.AmountOrQty), // Assuming cash is integer
-			Category:  "Penerimaan Zakat",
-			CreatedBy: userID,
-		}
+	txModel, err := buildLedgerEntry(req.FundID, req.AmountOrQty, req.Unit, domain.TransactionCredit, domain.CategoryZakatIn, userID)
+	if err != nil {
+		return nil, err
 	}
 
 	donation := &domain.ZakatDonation{
@@ -45,34 +44,28 @@ func (s *zakatService) CollectZakat(req zakat.CollectZakatRequest, userID uuid.U
 	}
 
 	if err := s.repo.CollectZakat(donation, txModel); err != nil {
-		return nil, err
+		return nil, financeSvc.MapLedgerError(err)
 	}
 
-	res := &zakat.ZakatDonationResponse{
-		ID:          donation.ID,
-		MuzakkiID:   donation.MuzakkiID,
-		ZakatType:   donation.ZakatType,
-		Amount:      donation.AmountOrQty,
-		Unit:        donation.Unit,
-		Description: donation.Description,
-		CreatedAt:   time.Now().Format("2006-01-02T15:04:05Z07:00"),
-	}
-	if txModel != nil {
-		res.TransactionID = &txModel.ID
-	}
-	return res, nil
+	res := zakat.ToDonationResponse(donation)
+	return &res, nil
 }
 
 func (s *zakatService) DistributeZakat(req zakat.DistributeZakatRequest, userID uuid.UUID) (*zakat.ZakatDistributionResponse, error) {
-	var txModel *domain.Transaction
-	if req.FundID != nil {
-		txModel = &domain.Transaction{
-			FundID:    *req.FundID,
-			Type:      "DEBIT",
-			Amount:    int64(req.AmountOrQty), // Assuming cash is integer
-			Category:  "Penyaluran Zakat",
-			CreatedBy: userID,
+	mustahik, err := s.repo.FindJamaah(req.MustahikID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperror.Validation("recipient not found")
 		}
+		return nil, apperror.Internal("failed to load recipient", err)
+	}
+	if !mustahik.IsMustahik {
+		return nil, apperror.Validation("recipient is not registered as mustahik")
+	}
+
+	txModel, err := buildLedgerEntry(req.FundID, req.AmountOrQty, req.Unit, domain.TransactionDebit, domain.CategoryZakatOut, userID)
+	if err != nil {
+		return nil, err
 	}
 
 	distribution := &domain.ZakatDistribution{
@@ -83,92 +76,58 @@ func (s *zakatService) DistributeZakat(req zakat.DistributeZakatRequest, userID 
 	}
 
 	if err := s.repo.DistributeZakat(distribution, txModel); err != nil {
-		return nil, err
+		return nil, financeSvc.MapLedgerError(err)
 	}
 
-	res := &zakat.ZakatDistributionResponse{
-		ID:            distribution.ID,
-		MustahikID:    distribution.MustahikID,
-		Amount:        distribution.AmountOrQty,
-		Unit:        distribution.Unit,
-		Description: distribution.Description,
-		DistributedAt: time.Now().Format("2006-01-02T15:04:05Z07:00"),
-	}
-	if txModel != nil {
-		res.TransactionID = &txModel.ID
-	}
-	return res, nil
+	res := zakat.ToDistributionResponse(distribution)
+	return &res, nil
 }
 
-func (s *zakatService) GetDonations(page int, limit int) (*zakat.PaginatedDonationResponse, error) {
+// buildLedgerEntry returns the ledger transaction for a zakat record, or nil
+// when no fund is given (goods such as rice are not posted to the ledger).
+// Only whole rupiah amounts can be posted, since the ledger stores int64 IDR.
+func buildLedgerEntry(fundID *uint, amount float64, unit domain.ZakatUnit, txType domain.TransactionType, category string, userID uuid.UUID) (*domain.Transaction, error) {
+	if fundID == nil {
+		return nil, nil
+	}
+	if unit != domain.ZakatUnitIDR {
+		return nil, apperror.Validation("only IDR amounts can be posted to a fund")
+	}
+	if amount != math.Trunc(amount) || amount > math.MaxInt64 {
+		return nil, apperror.Validation("amount posted to a fund must be a whole rupiah value")
+	}
+
+	return &domain.Transaction{
+		FundID:    *fundID,
+		Type:      txType,
+		Amount:    int64(amount),
+		Category:  category,
+		CreatedBy: userID,
+	}, nil
+}
+
+func (s *zakatService) GetDonations(page int, limit int) (utils.Page[zakat.ZakatDonationResponse], error) {
 	donations, total, err := s.repo.GetDonations(page, limit)
 	if err != nil {
-		return nil, err
+		return utils.Page[zakat.ZakatDonationResponse]{}, apperror.Internal("failed to fetch donations", err)
 	}
 
-	var res []zakat.ZakatDonationResponse
-	for _, d := range donations {
-		createdAt := d.CreatedAt
-		if d.Transaction != nil {
-			createdAt = d.Transaction.CreatedAt
-		}
-		res = append(res, zakat.ZakatDonationResponse{
-			ID:            d.ID,
-			TransactionID: d.TransactionID,
-			MuzakkiID:     d.MuzakkiID,
-			MuzakkiName:   d.Muzakki.FullName,
-			ZakatType:     d.ZakatType,
-			Amount:        d.AmountOrQty,
-			Unit:          d.Unit,
-			Description:   d.Description,
-			CreatedAt:     createdAt.Format("2006-01-02T15:04:05Z07:00"),
-		})
+	res := make([]zakat.ZakatDonationResponse, 0, len(donations))
+	for i := range donations {
+		res = append(res, zakat.ToDonationResponse(&donations[i]))
 	}
-
-	totalPages := 0
-	if limit > 0 {
-		totalPages = int((total + int64(limit) - 1) / int64(limit))
-	}
-
-	return &zakat.PaginatedDonationResponse{
-		Data:       res,
-		Total:      total,
-		Page:       page,
-		Limit:      limit,
-		TotalPages: totalPages,
-	}, nil
+	return utils.NewPage(res, total, page, limit), nil
 }
 
-func (s *zakatService) GetDistributions(page int, limit int) (*zakat.PaginatedDistributionResponse, error) {
+func (s *zakatService) GetDistributions(page int, limit int) (utils.Page[zakat.ZakatDistributionResponse], error) {
 	distributions, total, err := s.repo.GetDistributions(page, limit)
 	if err != nil {
-		return nil, err
+		return utils.Page[zakat.ZakatDistributionResponse]{}, apperror.Internal("failed to fetch distributions", err)
 	}
 
-	var res []zakat.ZakatDistributionResponse
-	for _, d := range distributions {
-		res = append(res, zakat.ZakatDistributionResponse{
-			ID:            d.ID,
-			TransactionID: d.TransactionID,
-			MustahikID:    d.MustahikID,
-			MustahikName:  d.Mustahik.FullName,
-			Amount:        d.AmountOrQty,
-			Unit:          d.Unit,
-			Description:   d.Description,
-			DistributedAt: d.DistributedAt.Format("2006-01-02T15:04:05Z07:00"),
-		})
+	res := make([]zakat.ZakatDistributionResponse, 0, len(distributions))
+	for i := range distributions {
+		res = append(res, zakat.ToDistributionResponse(&distributions[i]))
 	}
-
-	totalPages := 0
-	if limit > 0 {
-		totalPages = int((total + int64(limit) - 1) / int64(limit))
-	}
-
-	return &zakat.PaginatedDistributionResponse{
-		Data:       res,
-		Total:      total,
-		Page:       page,
-		Limit:      limit,
-		TotalPages: totalPages,
-	}, nil
+	return utils.NewPage(res, total, page, limit), nil
 }

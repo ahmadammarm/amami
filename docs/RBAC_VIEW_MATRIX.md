@@ -73,14 +73,24 @@ This document defines the relationship between backend permissions and frontend 
 ---
 
 ## 4. Summary Table of Permissions
+
+This table is the grant source of truth. It is implemented in `backend/internal/domain/permissions.go` (`RolePermissions`), synced to the database on every server start, and checked by `permissions_test.go`. Read codes are granted explicitly; a `*:manage` code does not imply the matching `*:read`.
+
 | Permission Code | Super Admin | Bendahara | Takmir | Sekretaris | Jamaah |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | `user:manage` | ✅ | ❌ | ❌ | ❌ | ❌ |
 | `ledger:read` | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `ledger:write` | ❌ | ✅ | ❌ | ❌ | ❌ |
+| `zakat:read` | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `zakat:manage` | ✅ | ✅ | ✅ | ❌ | ❌ |
 | `jamaah:manage` | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `inventory:manage`| ❌ | ❌ | ✅ | ✅ | ❌ |
+| `mustahik:survey` | ❌ | ❌ | ✅ | ✅ | ❌ |
+| `qurban:read` | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `qurban:manage` | ❌ | ❌ | ✅ | ✅ | ❌ |
+| `inventory:read` | ✅ | ❌ | ✅ | ✅ | ✅ |
+| `inventory:manage`| ❌ | ❌ | ✅ | ✅ | ❌ |
+| `agenda:read` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `agenda:manage` | ✅ | ❌ | ✅ | ✅ | ❌ |
 | `settings:manage` | ✅ | ❌ | ❌ | ✅ | ❌ |
+
+"Personal" cells in section 2 (a jamaah's own bookings, loans and donations) are not implemented yet; they need self-service endpoints keyed on the user's linked jamaah profile.

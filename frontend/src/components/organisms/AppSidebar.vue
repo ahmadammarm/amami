@@ -1,40 +1,48 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, type Component } from 'vue';
 import { useRoute } from 'vue-router';
 import { useAuthStore } from '../../stores/auth';
-import { 
-  LayoutDashboard, 
-  Wallet, 
-  HandCoins, 
-  Beef, 
-  Users, 
-  Settings, 
+import { Permission } from '../../lib/permissions';
+import {
+  LayoutDashboard,
+  Wallet,
+  HandCoins,
+  Beef,
+  Users,
+  Settings,
   X,
   PackageSearch,
   CalendarRange
 } from 'lucide-vue-next';
+
+interface MenuItem {
+  name: string;
+  icon: Component;
+  path: string;
+  /** Omitted for pages every signed-in user may open. */
+  permission?: Permission;
+}
 
 const authStore = useAuthStore();
 const route = useRoute();
 
 const emit = defineEmits(['close']);
 
-const menuItems = [
-  { name: 'Dashboard', icon: LayoutDashboard, path: '/', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
-  { name: 'Finance', icon: Wallet, path: '/finance', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS'] },
-  { name: 'Zakat', icon: HandCoins, path: '/zakat', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
-  { name: 'Jamaah', icon: Users, path: '/jamaah', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS'] },
-  { name: 'Qurban', icon: Beef, path: '/qurban', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
-  { name: 'Inventory', icon: PackageSearch, path: '/inventory', roles: ['SUPER_ADMIN', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
-  { name: 'Agenda', icon: CalendarRange, path: '/agenda', roles: ['SUPER_ADMIN', 'BENDAHARA', 'TAKMIR', 'SEKRETARIS', 'JAMAAH'] },
-  { name: 'Settings', icon: Settings, path: '/settings', roles: ['SUPER_ADMIN', 'SEKRETARIS'] },
-  { name: 'Users', icon: Users, path: '/users', roles: ['SUPER_ADMIN'] },
+const menuItems: MenuItem[] = [
+  { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { name: 'Finance', icon: Wallet, path: '/dashboard/finance', permission: Permission.LedgerRead },
+  { name: 'Zakat', icon: HandCoins, path: '/dashboard/zakat', permission: Permission.ZakatRead },
+  { name: 'Jamaah', icon: Users, path: '/dashboard/jamaah', permission: Permission.JamaahManage },
+  { name: 'Qurban', icon: Beef, path: '/dashboard/qurban', permission: Permission.QurbanRead },
+  { name: 'Inventory', icon: PackageSearch, path: '/dashboard/inventory', permission: Permission.InventoryRead },
+  { name: 'Agenda', icon: CalendarRange, path: '/dashboard/agenda', permission: Permission.AgendaRead },
+  { name: 'Settings', icon: Settings, path: '/dashboard/settings', permission: Permission.SettingsManage },
+  { name: 'Users', icon: Users, path: '/dashboard/users', permission: Permission.UserManage },
 ];
 
 const filteredMenu = computed(() => {
-  const role = authStore.userRole;
-  if (!role) return [];
-  return menuItems.filter(item => item.roles.includes(role));
+  if (!authStore.user) return [];
+  return menuItems.filter(item => !item.permission || authStore.can(item.permission));
 });
 </script>
 

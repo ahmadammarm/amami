@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useQuery } from '@tanstack/vue-query';
-import apiClient from '../../api/client';
+import { jamaahService } from '../../api/services/jamaah';
+import { queryKeys } from '../../api/queryKeys';
+import { scoreBadgeClass, scoreLevel } from '../../lib/mustahik';
+import type { Jamaah, JamaahListParams } from '../../types/jamaah';
 import { Check, ChevronsUpDown, Loader2 } from 'lucide-vue-next';
 import { useDebounceFn } from '@vueuse/core';
 import {
@@ -20,8 +23,10 @@ import {
 import Button from '../atoms/button/Button.vue';
 
 const props = defineProps<{
-  modelValue: string;
+  /** Selected jamaah id; empty or undefined when nothing is selected. */
+  modelValue?: string;
   placeholder?: string;
+  /** Only list registered mustahik, highest poverty score first (zakat targeting). */
   mustahikOnly?: boolean;
   muzakkiOnly?: boolean;
 }>();
@@ -42,30 +47,27 @@ watch(searchQuery, (val) => {
   updateSearch(val);
 });
 
-// Fetch Jamaah asynchronously based on search query
+const params = computed<JamaahListParams>(() => ({
+  page: 1,
+  limit: 20,
+  query: debouncedSearch.value || undefined,
+  mustahik: props.mustahikOnly ? true : props.muzakkiOnly ? false : undefined,
+  sort: props.mustahikOnly ? 'score_desc' : 'name_asc',
+}));
+
 const { data: searchResults, isLoading } = useQuery({
-  queryKey: ['jamaah-search', debouncedSearch],
-  queryFn: async () => {
-    // Only search if there's a query or just load the first 20
-    const query = debouncedSearch.value ? `&search=${encodeURIComponent(debouncedSearch.value)}` : '';
-    let filterParam = '';
-    if (props.mustahikOnly) {
-      filterParam = '&is_mustahik=true';
-    } else if (props.muzakkiOnly) {
-      filterParam = '&is_mustahik=false';
-    }
-    const response = await apiClient.get(`/jamaah?page=1&limit=20${query}${filterParam}`);
-    // Handle both old and new response shapes for safety
-    const data = response.data.data;
-    return data.items || data || [];
-  },
+  queryKey: computed(() => queryKeys.jamaah.list(params.value)),
+  queryFn: async () => (await jamaahService.getJamaahs(params.value)).items,
 });
 
-const selectedJamaah = ref<any>(null);
+const selectedJamaah = ref<Jamaah | null>(null);
 
-// When modelValue changes externally or we load initial data, we might need to fetch the single user if not in list
-// For simplicity in this demo, we assume the user selects from the list.
-const handleSelect = (jamaah: any) => {
+// Forget the selection when the parent clears the value (e.g. after a form reset).
+watch(() => props.modelValue, (value) => {
+  if (!value) selectedJamaah.value = null;
+});
+
+const handleSelect = (jamaah: Jamaah) => {
   selectedJamaah.value = jamaah;
   emit('update:modelValue', jamaah.id);
   open.value = false;
@@ -89,9 +91,9 @@ const handleSelect = (jamaah: any) => {
     </PopoverTrigger>
     <PopoverContent class="w-full p-0 shadow-xl border-gray-100 rounded-xl" align="start">
       <Command>
-        <CommandInput 
-          placeholder="Search jamaah by name..." 
-          v-model="searchQuery" 
+        <CommandInput
+          placeholder="Search jamaah by name..."
+          v-model="searchQuery"
           class="h-11 border-none focus:ring-0"
         />
         <CommandEmpty class="py-6 text-center text-sm text-gray-500">
@@ -117,7 +119,12 @@ const handleSelect = (jamaah: any) => {
                 ]"
               />
               {{ jamaah.full_name }}
-              <span class="text-xs text-gray-400 ml-2">({{ jamaah.nik }})</span>
+              <span
+                v-if="mustahikOnly"
+                :class="['ml-auto px-2 py-0.5 rounded-full text-[10px] font-semibold', scoreBadgeClass[scoreLevel(jamaah.mustahik_score)]]"
+              >
+                {{ jamaah.mustahik_score.toFixed(1) }}
+              </span>
             </CommandItem>
           </CommandGroup>
         </CommandList>

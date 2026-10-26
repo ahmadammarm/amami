@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
+import { useForm } from 'vee-validate';
+import { toTypedSchema } from '@vee-validate/zod';
 import { zakatService } from '@/api/services/zakat';
 import { financeService } from '@/api/services/finance';
+import { getErrorMessage } from '@/api/client';
+import { queryKeys } from '@/api/queryKeys';
 import { useAuthStore } from '@/stores/auth';
-import type { CollectZakatPayload, DistributeZakatPayload } from '@/types/zakat';
+import { Permission } from '@/lib/permissions';
+import { collectZakatSchema, distributeZakatSchema } from '@/schemas/zakat';
 import { toast } from 'vue-sonner';
 import { HeartHandshake, ArrowDown, ArrowUp } from 'lucide-vue-next';
 import AsyncJamaahSelect from '../molecules/AsyncJamaahSelect.vue';
@@ -12,99 +17,124 @@ import AsyncJamaahSelect from '../molecules/AsyncJamaahSelect.vue';
 const authStore = useAuthStore();
 const queryClient = useQueryClient();
 
+const PAGE_SIZE = 50;
+
 // State
 const activeTab = ref<'donations' | 'distributions'>('donations');
 const showCollectDialog = ref(false);
 const showDistributeDialog = ref(false);
 
-const collectForm = ref<CollectZakatPayload>({
-  muzakki_id: '',
-  fund_id: 0,
-  amount: 0,
-  zakat_type: 'FITRAH_UANG',
-  unit: 'IDR',
-  description: ''
+// Collect form
+const {
+  handleSubmit: handleCollectSubmit,
+  errors: collectErrors,
+  defineField: defineCollectField,
+  setFieldValue: setCollectField,
+  resetForm: resetCollectForm,
+} = useForm({
+  validationSchema: toTypedSchema(collectZakatSchema),
+  initialValues: { muzakki_id: '', zakat_type: 'MAAL', fund_id: null, amount: 0, unit: 'IDR', description: '' },
 });
 
-const distributeForm = ref<DistributeZakatPayload>({
-  mustahik_id: '',
-  fund_id: 0,
-  amount: 0,
-  unit: 'IDR',
-  description: ''
+const [muzakkiId] = defineCollectField('muzakki_id');
+const [zakatType] = defineCollectField('zakat_type');
+const [collectFundId] = defineCollectField('fund_id');
+const [collectAmount] = defineCollectField('amount');
+const [collectUnit] = defineCollectField('unit');
+const [collectDescription] = defineCollectField('description');
+
+// Distribute form
+const {
+  handleSubmit: handleDistributeSubmit,
+  errors: distributeErrors,
+  defineField: defineDistributeField,
+  setFieldValue: setDistributeField,
+  resetForm: resetDistributeForm,
+} = useForm({
+  validationSchema: toTypedSchema(distributeZakatSchema),
+  initialValues: { mustahik_id: '', fund_id: null, amount: 0, unit: 'IDR', description: '' },
 });
 
-// Watcher to dynamically set unit and fund requirement
-import { watch } from 'vue';
-watch(() => collectForm.value.zakat_type, (newType) => {
-  if (newType === 'FITRAH_BERAS') {
-    collectForm.value.unit = 'KG';
-    collectForm.value.fund_id = undefined; // Nullify fund_id for non-cash
-  } else {
-    collectForm.value.unit = 'IDR';
-    if (!collectForm.value.fund_id) collectForm.value.fund_id = 0; // Require fund
-  }
+const [mustahikId] = defineDistributeField('mustahik_id');
+const [distributeFundId] = defineDistributeField('fund_id');
+const [distributeAmount] = defineDistributeField('amount');
+const [distributeUnit] = defineDistributeField('unit');
+const [distributeDescription] = defineDistributeField('description');
+
+// Rice is counted in KG and never posted to a fund; cash is always IDR.
+watch(zakatType, (type) => {
+  const isRice = type === 'FITRAH_BERAS';
+  setCollectField('unit', isRice ? 'KG' : 'IDR');
+  if (isRice) setCollectField('fund_id', null);
 });
 
-watch(() => distributeForm.value.unit, (newUnit) => {
-  if (newUnit === 'KG') {
-    distributeForm.value.fund_id = undefined;
-  } else {
-    if (!distributeForm.value.fund_id) distributeForm.value.fund_id = 0;
-  }
+watch(distributeUnit, (unit) => {
+  if (unit !== 'IDR') setDistributeField('fund_id', null);
 });
 
 // Permissions
-const canManage = computed(() => {
-  return authStore.userRole ? ['SUPER_ADMIN', 'BENDAHARA'].includes(authStore.userRole) : false;
-});
+const canManage = computed(() => authStore.can(Permission.ZakatManage));
+const canReadFunds = computed(() => authStore.can(Permission.LedgerRead));
 
 // Queries
 const { data: donations } = useQuery({
-  queryKey: ['zakat-donations'],
-  queryFn: () => zakatService.getDonations(1, 50),
+  queryKey: queryKeys.zakat.donations(1, PAGE_SIZE),
+  queryFn: () => zakatService.getDonations(1, PAGE_SIZE),
 });
 
 const { data: distributions } = useQuery({
-  queryKey: ['zakat-distributions'],
-  queryFn: () => zakatService.getDistributions(1, 50),
+  queryKey: queryKeys.zakat.distributions(1, PAGE_SIZE),
+  queryFn: () => zakatService.getDistributions(1, PAGE_SIZE),
 });
-
-// removed unused jamaahs query
 
 const { data: funds } = useQuery({
-  queryKey: ['funds'],
+  queryKey: queryKeys.finance.funds,
   queryFn: financeService.getFunds,
+  enabled: canReadFunds,
 });
 
-// Removed unused muzakkis and mustahiks
+const donationItems = computed(() => donations.value?.items ?? []);
+const distributionItems = computed(() => distributions.value?.items ?? []);
+
+const refreshAfterZakat = () => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.zakat.all });
+  queryClient.invalidateQueries({ queryKey: queryKeys.finance.all });
+  queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.metrics });
+};
 
 // Mutations
 const collectMutation = useMutation({
   mutationFn: zakatService.collectZakat,
   onSuccess: () => {
     toast.success('Zakat collected successfully!');
-    queryClient.invalidateQueries({ queryKey: ['zakat-donations'] });
-    queryClient.invalidateQueries({ queryKey: ['funds'] }); // Update ledger
-    queryClient.invalidateQueries({ queryKey: ['transactions'] }); // Update finance history
-    queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] }); // Update dashboard
-    showCollectDialog.value = false;
+    refreshAfterZakat();
+    closeCollectDialog();
   },
-  onError: () => toast.error('Failed to collect zakat'),
+  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Failed to collect zakat')),
 });
 
 const distributeMutation = useMutation({
   mutationFn: zakatService.distributeZakat,
   onSuccess: () => {
     toast.success('Zakat distributed successfully!');
-    queryClient.invalidateQueries({ queryKey: ['zakat-distributions'] });
-    queryClient.invalidateQueries({ queryKey: ['funds'] }); // Update ledger
-    queryClient.invalidateQueries({ queryKey: ['transactions'] }); // Update finance history
-    queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] }); // Update dashboard
-    showDistributeDialog.value = false;
+    refreshAfterZakat();
+    closeDistributeDialog();
   },
-  onError: () => toast.error('Failed to distribute zakat (Check fund balance)'),
+  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Failed to distribute zakat')),
 });
+
+const submitCollect = handleCollectSubmit((values) => collectMutation.mutate(values));
+const submitDistribute = handleDistributeSubmit((values) => distributeMutation.mutate(values));
+
+const closeCollectDialog = () => {
+  showCollectDialog.value = false;
+  resetCollectForm();
+};
+
+const closeDistributeDialog = () => {
+  showDistributeDialog.value = false;
+  resetDistributeForm();
+};
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(amount);
@@ -136,13 +166,13 @@ const formatCurrency = (amount: number) => {
 
     <!-- Tabs -->
     <div class="flex space-x-1 rounded-xl bg-gray-100 p-1 w-full max-w-md">
-      <button 
+      <button
         @click="activeTab = 'donations'"
         :class="['flex-1 rounded-lg py-2 text-sm font-medium transition-all', activeTab === 'donations' ? 'bg-white text-gray-900 shadow' : 'text-gray-500 hover:text-gray-700']"
       >
         Penerimaan Zakat
       </button>
-      <button 
+      <button
         @click="activeTab = 'distributions'"
         :class="['flex-1 rounded-lg py-2 text-sm font-medium transition-all', activeTab === 'distributions' ? 'bg-white text-gray-900 shadow' : 'text-gray-500 hover:text-gray-700']"
       >
@@ -164,10 +194,10 @@ const formatCurrency = (amount: number) => {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!donations?.data?.length" class="border-b">
+          <tr v-if="donationItems.length === 0" class="border-b">
             <td colspan="5" class="px-6 py-8 text-center text-gray-500">Belum ada data penerimaan zakat.</td>
           </tr>
-          <tr v-else v-for="d in donations?.data" :key="d.id" class="border-b hover:bg-gray-50">
+          <tr v-else v-for="d in donationItems" :key="d.id" class="border-b hover:bg-gray-50">
             <td class="px-6 py-4 text-gray-500">{{ new Date(d.created_at).toLocaleString('id-ID') }}</td>
             <td class="px-6 py-4 font-medium text-gray-900">{{ d.muzakki_name }}</td>
             <td class="px-6 py-4">
@@ -195,10 +225,10 @@ const formatCurrency = (amount: number) => {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!distributions?.data?.length" class="border-b">
+          <tr v-if="distributionItems.length === 0" class="border-b">
             <td colspan="4" class="px-6 py-8 text-center text-gray-500">Belum ada data penyaluran zakat.</td>
           </tr>
-          <tr v-else v-for="d in distributions?.data" :key="d.id" class="border-b hover:bg-gray-50">
+          <tr v-else v-for="d in distributionItems" :key="d.id" class="border-b hover:bg-gray-50">
             <td class="px-6 py-4 text-gray-500">{{ new Date(d.distributed_at).toLocaleString('id-ID') }}</td>
             <td class="px-6 py-4 font-medium text-gray-900">{{ d.mustahik_name }}</td>
             <td class="px-6 py-4 text-gray-600 truncate max-w-xs">{{ d.description || '-' }}</td>
@@ -216,37 +246,40 @@ const formatCurrency = (amount: number) => {
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
         <div class="px-6 py-4 border-b flex justify-between items-center bg-gray-50">
           <h3 class="text-lg font-bold text-gray-900">Terima Zakat</h3>
-          <button @click="showCollectDialog = false" class="text-gray-400 hover:text-gray-600">&times;</button>
+          <button @click="closeCollectDialog" class="text-gray-400 hover:text-gray-600">&times;</button>
         </div>
-        <form @submit.prevent="collectMutation.mutate(collectForm)">
+        <form @submit="submitCollect" novalidate>
           <div class="p-6 space-y-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Muzakki (Donatur)</label>
-              <AsyncJamaahSelect v-model="collectForm.muzakki_id" :muzakki-only="true" placeholder="Cari Muzakki (Donatur)..." />
+              <AsyncJamaahSelect v-model="muzakkiId" :muzakki-only="true" placeholder="Cari Muzakki (Donatur)..." />
+              <p v-if="collectErrors.muzakki_id" class="mt-1 text-xs text-red-600">{{ collectErrors.muzakki_id }}</p>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Jenis Zakat</label>
-              <select v-model="collectForm.zakat_type" required class="block w-full rounded-lg border-gray-300 p-2.5 border">
+              <select v-model="zakatType" class="block w-full rounded-lg border-gray-300 p-2.5 border">
                 <option value="FITRAH_BERAS">Zakat Fitrah (Beras)</option>
                 <option value="MAAL">Zakat Maal</option>
                 <option value="INFAQ">Infaq / Sedekah</option>
               </select>
             </div>
-            <div v-if="collectForm.zakat_type !== 'FITRAH_BERAS'">
+            <div v-if="collectUnit === 'IDR'">
               <label class="block text-sm font-medium text-gray-700 mb-1">Rekening Kas Tujuan</label>
-              <select v-model="collectForm.fund_id" required class="block w-full rounded-lg border-gray-300 p-2.5 border">
-                <option :value="0" disabled>Pilih Kas</option>
+              <select v-model="collectFundId" class="block w-full rounded-lg border-gray-300 p-2.5 border">
+                <option :value="null" disabled>Pilih Kas</option>
                 <option v-for="f in funds" :key="f.id" :value="f.id">{{ f.name }} ({{ formatCurrency(f.current_balance) }})</option>
               </select>
+              <p v-if="collectErrors.fund_id" class="mt-1 text-xs text-red-600">{{ collectErrors.fund_id }}</p>
             </div>
             <div class="flex gap-4">
               <div class="flex-1">
                 <label class="block text-sm font-medium text-gray-700 mb-1">Jumlah</label>
-                <input type="number" v-model="collectForm.amount" required min="1" step="0.01" class="block w-full rounded-lg border-gray-300 p-2.5 border" />
+                <input type="number" v-model.number="collectAmount" min="0" :step="collectUnit === 'IDR' ? 1 : 0.01" class="block w-full rounded-lg border-gray-300 p-2.5 border" />
+                <p v-if="collectErrors.amount" class="mt-1 text-xs text-red-600">{{ collectErrors.amount }}</p>
               </div>
               <div class="w-1/3">
                 <label class="block text-sm font-medium text-gray-700 mb-1">Satuan</label>
-                <select v-model="collectForm.unit" disabled class="block w-full rounded-lg border-gray-300 bg-gray-50 p-2.5 border text-gray-500">
+                <select v-model="collectUnit" disabled class="block w-full rounded-lg border-gray-300 bg-gray-50 p-2.5 border text-gray-500">
                   <option value="IDR">Rupiah (Rp)</option>
                   <option value="KG">Kilogram (KG)</option>
                 </select>
@@ -254,12 +287,13 @@ const formatCurrency = (amount: number) => {
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Keterangan</label>
-              <textarea v-model="collectForm.description" rows="2" class="block w-full rounded-lg border-gray-300 p-2.5 border" placeholder="Catatan tambahan..."></textarea>
+              <textarea v-model="collectDescription" rows="2" class="block w-full rounded-lg border-gray-300 p-2.5 border" placeholder="Catatan tambahan..."></textarea>
+              <p v-if="collectErrors.description" class="mt-1 text-xs text-red-600">{{ collectErrors.description }}</p>
             </div>
           </div>
           <div class="px-6 py-4 border-t bg-gray-50 flex justify-end space-x-3">
-            <button type="button" @click="showCollectDialog = false" class="px-4 py-2 text-sm text-gray-700 border rounded-lg hover:bg-gray-50">Batal</button>
-            <button type="submit" class="px-4 py-2 text-sm text-white bg-green-600 rounded-lg hover:bg-green-700">Simpan Penerimaan</button>
+            <button type="button" @click="closeCollectDialog" class="px-4 py-2 text-sm text-gray-700 border rounded-lg hover:bg-gray-50">Batal</button>
+            <button type="submit" :disabled="collectMutation.isPending.value" class="px-4 py-2 text-sm text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">Simpan Penerimaan</button>
           </div>
         </form>
       </div>
@@ -270,49 +304,53 @@ const formatCurrency = (amount: number) => {
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
         <div class="px-6 py-4 border-b flex justify-between items-center bg-gray-50">
           <h3 class="text-lg font-bold text-gray-900">Salurkan Zakat</h3>
-          <button @click="showDistributeDialog = false" class="text-gray-400 hover:text-gray-600">&times;</button>
+          <button @click="closeDistributeDialog" class="text-gray-400 hover:text-gray-600">&times;</button>
         </div>
-        <form @submit.prevent="distributeMutation.mutate(distributeForm)">
+        <form @submit="submitDistribute" novalidate>
           <div class="p-6 space-y-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Mustahik (Penerima)</label>
-              <AsyncJamaahSelect v-model="distributeForm.mustahik_id" :mustahik-only="true" placeholder="Cari Mustahik..." />
-              <p class="text-xs text-gray-500 mt-1">Hanya menampilkan jamaah yang ditandai sebagai Mustahik.</p>
+              <AsyncJamaahSelect v-model="mustahikId" :mustahik-only="true" placeholder="Cari Mustahik..." />
+              <p v-if="distributeErrors.mustahik_id" class="mt-1 text-xs text-red-600">{{ distributeErrors.mustahik_id }}</p>
+              <p v-else class="text-xs text-gray-500 mt-1">Hanya Mustahik terdaftar, diurutkan dari skor kemiskinan tertinggi.</p>
             </div>
             <div class="flex items-center gap-4 border-b border-gray-100 pb-4">
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" v-model="distributeForm.unit" value="IDR" class="text-blue-600 focus:ring-blue-500" />
+                <input type="radio" v-model="distributeUnit" value="IDR" class="text-blue-600 focus:ring-blue-500" />
                 <span class="text-sm font-medium text-gray-700">Uang Tunai</span>
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" v-model="distributeForm.unit" value="KG" class="text-blue-600 focus:ring-blue-500" />
+                <input type="radio" v-model="distributeUnit" value="KG" class="text-blue-600 focus:ring-blue-500" />
                 <span class="text-sm font-medium text-gray-700">Beras (KG)</span>
               </label>
             </div>
-            <div v-if="distributeForm.unit === 'IDR'">
+            <div v-if="distributeUnit === 'IDR'">
               <label class="block text-sm font-medium text-gray-700 mb-1">Rekening Sumber Kas</label>
-              <select v-model="distributeForm.fund_id" required class="block w-full rounded-lg border-gray-300 p-2.5 border">
-                <option :value="0" disabled>Pilih Kas</option>
+              <select v-model="distributeFundId" class="block w-full rounded-lg border-gray-300 p-2.5 border">
+                <option :value="null" disabled>Pilih Kas</option>
                 <option v-for="f in funds" :key="f.id" :value="f.id">{{ f.name }} (Tersedia: {{ formatCurrency(f.current_balance) }})</option>
               </select>
+              <p v-if="distributeErrors.fund_id" class="mt-1 text-xs text-red-600">{{ distributeErrors.fund_id }}</p>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Jumlah</label>
               <div class="flex">
-                <input type="number" v-model="distributeForm.amount" required min="1" step="0.01" class="block w-full rounded-l-lg border-gray-300 p-2.5 border focus:ring-blue-500 focus:border-blue-500" />
+                <input type="number" v-model.number="distributeAmount" min="0" :step="distributeUnit === 'IDR' ? 1 : 0.01" class="block w-full rounded-l-lg border-gray-300 p-2.5 border focus:ring-blue-500 focus:border-blue-500" />
                 <span class="inline-flex items-center px-4 rounded-r-lg border border-l-0 border-gray-300 bg-gray-50 text-gray-500 text-sm font-medium">
-                  {{ distributeForm.unit === 'IDR' ? 'Rp' : 'KG' }}
+                  {{ distributeUnit === 'IDR' ? 'Rp' : 'KG' }}
                 </span>
               </div>
+              <p v-if="distributeErrors.amount" class="mt-1 text-xs text-red-600">{{ distributeErrors.amount }}</p>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Keterangan</label>
-              <textarea v-model="distributeForm.description" rows="2" class="block w-full rounded-lg border-gray-300 p-2.5 border" placeholder="Catatan tambahan..."></textarea>
+              <textarea v-model="distributeDescription" rows="2" class="block w-full rounded-lg border-gray-300 p-2.5 border" placeholder="Catatan tambahan..."></textarea>
+              <p v-if="distributeErrors.description" class="mt-1 text-xs text-red-600">{{ distributeErrors.description }}</p>
             </div>
           </div>
           <div class="px-6 py-4 border-t bg-gray-50 flex justify-end space-x-3">
-            <button type="button" @click="showDistributeDialog = false" class="px-4 py-2 text-sm text-gray-700 border rounded-lg hover:bg-gray-50">Batal</button>
-            <button type="submit" class="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700">Salurkan Bantuan</button>
+            <button type="button" @click="closeDistributeDialog" class="px-4 py-2 text-sm text-gray-700 border rounded-lg hover:bg-gray-50">Batal</button>
+            <button type="submit" :disabled="distributeMutation.isPending.value" class="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">Salurkan Bantuan</button>
           </div>
         </form>
       </div>

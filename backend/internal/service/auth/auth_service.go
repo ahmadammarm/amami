@@ -1,62 +1,57 @@
 package auth
 
 import (
-	"errors"
-
 	"github.com/ahmadammarm/amami/backend/internal/domain"
 	"github.com/ahmadammarm/amami/backend/internal/dto/auth"
 	"github.com/ahmadammarm/amami/backend/internal/dto/user"
 	repo "github.com/ahmadammarm/amami/backend/internal/repository/auth"
+	"github.com/ahmadammarm/amami/backend/pkg/apperror"
 	"github.com/ahmadammarm/amami/backend/pkg/utils"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type AuthService interface {
 	Login(req auth.LoginRequest) (*auth.LoginResponse, error)
-	GetMe(userID uuid.UUID) (*user.UserResponse, error)
+	GetMe(userID uuid.UUID) (*user.MeResponse, error)
 	ChangePassword(userID uuid.UUID, req auth.ChangePasswordRequest) (*auth.LoginResponse, error)
 }
 
 type authService struct {
 	userRepo repo.UserRepository
+	roleRepo repo.RoleRepository
 }
 
-func NewAuthService(userRepo repo.UserRepository) AuthService {
-	return &authService{userRepo: userRepo}
+func NewAuthService(userRepo repo.UserRepository, roleRepo repo.RoleRepository) AuthService {
+	return &authService{userRepo: userRepo, roleRepo: roleRepo}
 }
 
 func (s *authService) Login(req auth.LoginRequest) (*auth.LoginResponse, error) {
-	user, err := s.userRepo.FindByUsernameOrEmail(req.Email)
+	u, err := s.userRepo.FindByUsernameOrEmail(req.Email)
 	if err != nil {
-		return nil, errors.New("invalid credentials")
+		return nil, apperror.Unauthorized("invalid credentials")
 	}
 
-	if user.Status != "ACTIVE" && user.Status != "PENDING_PASSWORD_CHANGE" {
-		return nil, errors.New("account is suspended or inactive")
+	if u.Status != domain.UserActive && u.Status != domain.UserPendingPasswordChange {
+		return nil, apperror.Unauthorized("account is suspended or inactive")
 	}
 
-	if !utils.CheckPasswordHash(req.Password, user.PasswordHash) {
-		return nil, errors.New("invalid credentials")
+	if !utils.CheckPasswordHash(req.Password, u.PasswordHash) {
+		return nil, apperror.Unauthorized("invalid credentials")
 	}
 
 	scope := utils.ScopeFullAccess
-	requiresChange := false
-	if user.Status == "PENDING_PASSWORD_CHANGE" {
+	requiresChange := u.Status == domain.UserPendingPasswordChange
+	if requiresChange {
 		scope = utils.ScopePasswordReset
-		requiresChange = true
 	}
 
-	token, err := utils.GenerateToken(user.ID, user.RoleID, scope)
+	token, err := utils.GenerateToken(u.ID, u.RoleID, scope)
 	if err != nil {
-		return nil, errors.New("failed to generate token")
+		return nil, apperror.Internal("failed to generate token", err)
 	}
 
-	// Record Audit Log
-	s.userRepo.CreateAuditLog(domain.AuditLog{
-		UserID: user.ID,
-		Action: "LOGIN",
-		Entity: "User Session",
-	})
+	s.recordAudit(u.ID, "LOGIN", "User Session")
 
 	return &auth.LoginResponse{
 		Token:                  token,
@@ -67,31 +62,24 @@ func (s *authService) Login(req auth.LoginRequest) (*auth.LoginResponse, error) 
 func (s *authService) ChangePassword(userID uuid.UUID, req auth.ChangePasswordRequest) (*auth.LoginResponse, error) {
 	u, err := s.userRepo.FindByID(userID)
 	if err != nil {
-		return nil, errors.New("user not found")
+		return nil, apperror.NotFound("user not found")
 	}
 
 	hashedPassword, err := utils.HashPassword(req.NewPassword)
 	if err != nil {
-		return nil, errors.New("failed to hash password")
+		return nil, apperror.Internal("failed to hash password", err)
 	}
 
-	u.PasswordHash = hashedPassword
-	u.Status = "ACTIVE"
-
-	if err := s.userRepo.Update(u); err != nil {
-		return nil, errors.New("failed to update user")
+	if err := s.userRepo.UpdateCredentials(u.ID, hashedPassword, domain.UserActive); err != nil {
+		return nil, apperror.Internal("failed to update user", err)
 	}
 
 	token, err := utils.GenerateToken(u.ID, u.RoleID, utils.ScopeFullAccess)
 	if err != nil {
-		return nil, errors.New("failed to generate token")
+		return nil, apperror.Internal("failed to generate token", err)
 	}
 
-	s.userRepo.CreateAuditLog(domain.AuditLog{
-		UserID: u.ID,
-		Action: "PASSWORD_CHANGE",
-		Entity: "User Account",
-	})
+	s.recordAudit(u.ID, "PASSWORD_CHANGE", "User Account")
 
 	return &auth.LoginResponse{
 		Token:                  token,
@@ -99,17 +87,31 @@ func (s *authService) ChangePassword(userID uuid.UUID, req auth.ChangePasswordRe
 	}, nil
 }
 
-func (s *authService) GetMe(userID uuid.UUID) (*user.UserResponse, error) {
+func (s *authService) GetMe(userID uuid.UUID) (*user.MeResponse, error) {
 	u, err := s.userRepo.FindByID(userID)
 	if err != nil {
-		return nil, errors.New("user not found")
+		return nil, apperror.NotFound("user not found")
 	}
 
-	return &user.UserResponse{
-		ID:       u.ID,
-		Username: u.Username,
-		Email:    u.Email,
-		RoleName: u.Role.Name,
-		Status:   u.Status,
+	permissions, err := s.roleRepo.FindPermissionsByRoleID(u.RoleID)
+	if err != nil {
+		return nil, apperror.Internal("failed to load permissions", err)
+	}
+
+	codes := make([]domain.PermissionCode, 0, len(permissions))
+	for _, p := range permissions {
+		codes = append(codes, domain.PermissionCode(p.Code))
+	}
+
+	return &user.MeResponse{
+		UserResponse: user.ToUserResponse(u),
+		Permissions:  codes,
 	}, nil
+}
+
+// recordAudit is best effort: a failed audit write must not fail the login itself.
+func (s *authService) recordAudit(userID uuid.UUID, action, entity string) {
+	if err := s.userRepo.CreateAuditLog(domain.AuditLog{UserID: userID, Action: action, Entity: entity}); err != nil {
+		zap.L().Warn("failed to write audit log", zap.String("action", action), zap.Error(err))
+	}
 }

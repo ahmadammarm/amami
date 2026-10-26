@@ -1,24 +1,36 @@
-import apiClient from '../client';
-import type { Jamaah, CreateJamaahPayload, UpdateJamaahPayload, PaginatedJamaahResponse } from '../../types/jamaah';
+import { isNotFoundError, request } from '../client';
+import type { Page } from '../../types/api';
+import type { Jamaah, JamaahListParams, MustahikSurvey } from '../../types/jamaah';
+import type { JamaahPayload, MustahikSurveyPayload } from '../../schemas/jamaah';
 
 export const jamaahService = {
-  async getJamaahs(page: number = 1, limit: number = 10, query: string = ''): Promise<PaginatedJamaahResponse> {
-    const response = await apiClient.get<PaginatedJamaahResponse>(`/jamaah?page=${page}&limit=${limit}&query=${encodeURIComponent(query)}`);
-    return response.data;
+  getJamaahs(params: JamaahListParams): Promise<Page<Jamaah>> {
+    return request<Page<Jamaah>>({ method: 'GET', url: '/jamaah', params });
   },
 
-  async getJamaahByID(id: string): Promise<Jamaah> {
-    const response = await apiClient.get<Jamaah>(`/jamaah/${id}`);
-    return response.data;
+  getJamaahByID(id: string): Promise<Jamaah> {
+    return request<Jamaah>({ method: 'GET', url: `/jamaah/${id}` });
   },
 
-  async createJamaah(payload: CreateJamaahPayload): Promise<Jamaah> {
-    const response = await apiClient.post<Jamaah>('/jamaah', payload);
-    return response.data;
+  createJamaah(payload: JamaahPayload): Promise<Jamaah> {
+    return request<Jamaah>({ method: 'POST', url: '/jamaah', data: payload });
   },
 
-  async updateJamaah(id: string, payload: UpdateJamaahPayload): Promise<Jamaah> {
-    const response = await apiClient.put<Jamaah>(`/jamaah/${id}`, payload);
-    return response.data;
-  }
+  updateJamaah(id: string, payload: JamaahPayload): Promise<Jamaah> {
+    return request<Jamaah>({ method: 'PUT', url: `/jamaah/${id}`, data: payload });
+  },
+
+  /** Returns null when the jamaah has not been surveyed yet. */
+  async getSurvey(id: string): Promise<MustahikSurvey | null> {
+    try {
+      return await request<MustahikSurvey>({ method: 'GET', url: `/jamaah/${id}/mustahik-survey` });
+    } catch (error) {
+      if (isNotFoundError(error)) return null;
+      throw error;
+    }
+  },
+
+  submitSurvey(id: string, payload: MustahikSurveyPayload): Promise<MustahikSurvey> {
+    return request<MustahikSurvey>({ method: 'PUT', url: `/jamaah/${id}/mustahik-survey`, data: payload });
+  },
 };

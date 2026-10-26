@@ -2,8 +2,8 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../../stores/auth';
-import apiClient from '../../api/client';
-import axios from 'axios';
+import { getErrorMessage, request } from '../../api/client';
+import type { LoginResponse } from '../../types/auth';
 import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/zod';
 import * as zod from 'zod';
@@ -31,24 +31,23 @@ const [password, passwordAttrs] = defineField('password');
 const onSubmit = handleSubmit(async (values) => {
   isLoading.value = true;
   try {
-    const response = await apiClient.post('/auth/login', values);
-    const { token, requires_password_change } = response.data.data;
-    
+    const { token, requires_password_change } = await request<LoginResponse>({
+      method: 'POST',
+      url: '/auth/login',
+      data: values,
+    });
+
     authStore.setToken(token, requires_password_change);
-    
+
     if (requires_password_change) {
       router.push({ name: 'ForceChangePassword' });
     } else {
       await authStore.fetchUser();
       // Redirect immediately to dashboard with success query param
-      router.push({ path: '/', query: { loginSuccess: 'true' } });
+      router.push({ name: 'Dashboard', query: { loginSuccess: 'true' } });
     }
   } catch (error) {
-    let message = 'Invalid email or password';
-    if (axios.isAxiosError(error)) {
-      message = error.response?.data?.message || message;
-    }
-    toast.error(message);
+    toast.error(getErrorMessage(error, 'Invalid email or password'));
   } finally {
     isLoading.value = false;
   }

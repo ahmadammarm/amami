@@ -1,18 +1,22 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
 import { userService } from '../api/services/user';
+import { getErrorMessage } from '../api/client';
+import { queryKeys } from '../api/queryKeys';
+import type { ManageableUserStatus } from '../types/user';
 import { toast } from 'vue-sonner';
 
 export const useUsersQuery = () => {
   return useQuery({
-    queryKey: ['users'],
+    queryKey: queryKeys.users.all,
     queryFn: () => userService.getAllUsers(1, 100),
   });
 };
 
 export const useRolesQuery = () => {
   return useQuery({
-    queryKey: ['roles'],
+    queryKey: queryKeys.users.roles,
     queryFn: userService.getRoles,
+    staleTime: Infinity,
   });
 };
 
@@ -21,11 +25,11 @@ export const useInviteUserMutation = () => {
   return useMutation({
     mutationFn: userService.inviteUser,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
       toast.success('User invited successfully');
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || 'Failed to invite user');
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error, 'Failed to invite user'));
     },
   });
 };
@@ -33,14 +37,14 @@ export const useInviteUserMutation = () => {
 export const useUpdateUserStatusMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) => 
+    mutationFn: ({ id, status }: { id: string; status: ManageableUserStatus }) =>
       userService.updateUserStatus(id, status),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
       toast.success('User status updated');
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || 'Failed to update user status');
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error, 'Failed to update user status'));
     },
   });
 };
@@ -50,11 +54,11 @@ export const useDeleteUserMutation = () => {
   return useMutation({
     mutationFn: (id: string) => userService.deleteUser(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] });
-      toast.success('User permanently deleted');
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+      toast.success('User deleted');
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || 'Failed to delete user');
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error, 'Failed to delete user'));
     },
   });
 };

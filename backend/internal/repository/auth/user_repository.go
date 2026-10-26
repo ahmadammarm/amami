@@ -10,7 +10,7 @@ type UserRepository interface {
 	FindByID(id uuid.UUID) (*domain.User, error)
 	FindByUsernameOrEmail(identifier string) (*domain.User, error)
 	Create(user *domain.User) error
-	Update(user *domain.User) error
+	UpdateCredentials(id uuid.UUID, passwordHash string, status domain.UserStatus) error
 	CreateAuditLog(log domain.AuditLog) error
 }
 
@@ -28,8 +28,11 @@ func (r *userRepository) FindByID(id uuid.UUID) (*domain.User, error) {
 		Preload("Role", func(db *gorm.DB) *gorm.DB {
 			return db.Select("id", "name")
 		}).
+		Preload("JamaahProfile", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id", "user_id", "full_name")
+		}).
 		First(&user, "id = ?", id).Error
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +47,7 @@ func (r *userRepository) FindByUsernameOrEmail(identifier string) (*domain.User,
 		}).
 		Where("username = ? OR email = ?", identifier, identifier).
 		First(&user).Error
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -55,8 +58,13 @@ func (r *userRepository) Create(user *domain.User) error {
 	return r.db.Create(user).Error
 }
 
-func (r *userRepository) Update(user *domain.User) error {
-	return r.db.Save(user).Error
+// UpdateCredentials updates only the password and status columns, so partially
+// loaded users (see FindByID) never overwrite other fields with zero values.
+func (r *userRepository) UpdateCredentials(id uuid.UUID, passwordHash string, status domain.UserStatus) error {
+	return r.db.Model(&domain.User{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"password_hash": passwordHash,
+		"status":        status,
+	}).Error
 }
 
 func (r *userRepository) CreateAuditLog(log domain.AuditLog) error {

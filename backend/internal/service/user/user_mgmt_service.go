@@ -1,25 +1,25 @@
 package user
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 
 	"github.com/ahmadammarm/amami/backend/internal/domain"
 	"github.com/ahmadammarm/amami/backend/internal/dto/user"
 	authRepo "github.com/ahmadammarm/amami/backend/internal/repository/auth"
 	userRepo "github.com/ahmadammarm/amami/backend/internal/repository/user"
-	"github.com/ahmadammarm/amami/backend/pkg/logger"
+	"github.com/ahmadammarm/amami/backend/pkg/apperror"
 	"github.com/ahmadammarm/amami/backend/pkg/utils"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 type UserMgmtService interface {
-	InviteUser(req user.InviteUserRequest) (*user.UserResponse, string, error)
-	GetAllUsers(page, limit int) ([]user.UserResponse, int64, error)
-	UpdateUserStatus(userID uuid.UUID, status string) error
-	DeleteUser(userID uuid.UUID) error
+	InviteUser(req user.InviteUserRequest) (*user.InviteUserResponse, error)
+	GetAllUsers(page, limit int) (utils.Page[user.UserResponse], error)
+	GetRoles() ([]user.RoleResponse, error)
+	UpdateUserStatus(userID uuid.UUID, status domain.UserStatus) error
+	DeleteUser(actorID, userID uuid.UUID) error
 }
 
 type userMgmtService struct {
@@ -34,96 +34,99 @@ func NewUserMgmtService(userRepo userRepo.UserMgmtRepository, roleRepo authRepo.
 	}
 }
 
-func (s *userMgmtService) InviteUser(req user.InviteUserRequest) (*user.UserResponse, string, error) {
-	// 1. Validate Role
+func (s *userMgmtService) InviteUser(req user.InviteUserRequest) (*user.InviteUserResponse, error) {
 	role, err := s.roleRepo.FindByID(req.RoleID)
 	if err != nil {
-		return nil, "", errors.New("invalid role id")
+		return nil, apperror.Validation("invalid role id")
 	}
 
 	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
-		return nil, "", errors.New("failed to hash password")
+		return nil, apperror.Internal("failed to hash password", err)
 	}
 
-	// 3. Construct models
 	userModel := &domain.User{
 		Username:     req.Username,
 		Email:        req.Email,
 		PasswordHash: hashedPassword,
 		RoleID:       req.RoleID,
-		Status:       "PENDING_PASSWORD_CHANGE",
+		Role:         *role,
+		Status:       domain.UserPendingPasswordChange,
 	}
+	jamaah := &domain.Jamaah{FullName: req.FullName}
 
-	jamaah := &domain.Jamaah{
-		FullName: req.FullName,
-	}
-
-	// 4. Save to DB
 	if err := s.userRepo.CreateUserWithProfile(userModel, jamaah); err != nil {
-		logger.Error("failed to create user with profile", zap.Error(err))
-		return nil, "", errors.New("failed to create user (username or email might already exist)")
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, apperror.Conflict("username or email already exists")
+		}
+		return nil, apperror.Internal("failed to create user", err)
 	}
+	userModel.JamaahProfile = jamaah
 
-	logger.Info("User invited successfully", 
-		zap.String("username", userModel.Username), 
-	)
+	zap.L().Info("User invited successfully", zap.String("username", userModel.Username))
 
-	return &user.UserResponse{
-		ID:       userModel.ID,
-		Username: userModel.Username,
-		Email:    userModel.Email,
-		FullName: jamaah.FullName,
-		RoleName: role.Name,
-		Status:   userModel.Status,
-	}, req.Password, nil
+	// The temporary password is returned until invitation emails are sent over SMTP.
+	return &user.InviteUserResponse{
+		User:              user.ToUserResponse(userModel),
+		TemporaryPassword: req.Password,
+	}, nil
 }
 
-func (s *userMgmtService) GetAllUsers(page, limit int) ([]user.UserResponse, int64, error) {
+func (s *userMgmtService) GetAllUsers(page, limit int) (utils.Page[user.UserResponse], error) {
 	users, total, err := s.userRepo.FindAllUsers(page, limit)
 	if err != nil {
-		return nil, 0, err
+		return utils.Page[user.UserResponse]{}, apperror.Internal("failed to fetch users", err)
 	}
 
-	var res []user.UserResponse
-	for _, u := range users {
-		res = append(res, user.UserResponse{
-			ID:       u.ID,
-			Username: u.Username,
-			Email:    u.Email,
-			RoleName: u.Role.Name,
-			Status:   u.Status,
-		})
+	res := make([]user.UserResponse, 0, len(users))
+	for i := range users {
+		res = append(res, user.ToUserResponse(&users[i]))
 	}
-
-	return res, total, nil
+	return utils.NewPage(res, total, page, limit), nil
 }
 
-func (s *userMgmtService) UpdateUserStatus(userID uuid.UUID, status string) error {
-	if status != "ACTIVE" && status != "SUSPENDED" {
-		return errors.New("invalid status, must be ACTIVE or SUSPENDED")
-	}
-	return s.userRepo.UpdateUserStatus(userID, status)
-}
-
-func (s *userMgmtService) DeleteUser(userID uuid.UUID) error {
-	user, err := s.userRepo.FindByID(userID)
+func (s *userMgmtService) GetRoles() ([]user.RoleResponse, error) {
+	roles, err := s.roleRepo.FindAll()
 	if err != nil {
-		return errors.New("user not found")
+		return nil, apperror.Internal("failed to fetch roles", err)
 	}
 
-	if user.Role.Name == "SUPER_ADMIN" {
-		return errors.New("cannot delete a SUPER_ADMIN")
+	res := make([]user.RoleResponse, 0, len(roles))
+	for _, r := range roles {
+		res = append(res, user.RoleResponse{ID: r.ID, Name: r.Name, Description: r.Description})
 	}
-
-	return s.userRepo.DeleteUser(userID)
+	return res, nil
 }
 
-func generateRandomPassword(length int) (string, error) {
-	buffer := make([]byte, length)
-	_, err := rand.Read(buffer)
-	if err != nil {
-		return "", err
+func (s *userMgmtService) UpdateUserStatus(userID uuid.UUID, status domain.UserStatus) error {
+	if err := s.userRepo.UpdateUserStatus(userID, status); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperror.NotFound("user not found")
+		}
+		return apperror.Internal("failed to update user status", err)
 	}
-	return base64.URLEncoding.EncodeToString(buffer)[:length], nil
+	return nil
+}
+
+func (s *userMgmtService) DeleteUser(actorID, userID uuid.UUID) error {
+	if actorID == userID {
+		return apperror.Forbidden("you cannot delete your own account")
+	}
+
+	target, err := s.userRepo.FindByID(userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperror.NotFound("user not found")
+		}
+		return apperror.Internal("failed to load user", err)
+	}
+
+	if target.Role.Name == domain.RoleSuperAdmin {
+		return apperror.Forbidden("cannot delete a SUPER_ADMIN")
+	}
+
+	if err := s.userRepo.DeleteUser(userID); err != nil {
+		return apperror.Internal("failed to delete user", err)
+	}
+	return nil
 }

@@ -4,9 +4,6 @@ import (
 	qurbanDto "github.com/ahmadammarm/amami/backend/internal/dto/qurban"
 	qurbanSvc "github.com/ahmadammarm/amami/backend/internal/service/qurban"
 	"github.com/ahmadammarm/amami/backend/pkg/utils"
-	"net/http"
-	"strconv"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -19,138 +16,145 @@ func NewQurbanHandler(svc qurbanSvc.QurbanService) *QurbanHandler {
 }
 
 func (h *QurbanHandler) CreatePackage(c *gin.Context) {
-	var req qurbanDto.CreatePackageRequest
+	var req qurbanDto.PackageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.ValidationErrorResponse(c, err)
 		return
 	}
+
 	res, err := h.svc.CreatePackage(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": res})
+	utils.CreatedResponse(c, "Package created successfully", res)
 }
 
 func (h *QurbanHandler) GetAllPackages(c *gin.Context) {
-	page := utils.ParseQueryInt(c, "page", 1)
-	limit := utils.ParseQueryInt(c, "limit", 20)
+	page, limit := utils.ParsePagination(c)
 
-	pkgs, total, err := h.svc.GetAllPackages(page, limit)
+	pkgs, err := h.svc.GetAllPackages(page, limit)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to fetch packages")
+		utils.HandleError(c, err)
 		return
 	}
-	
-	utils.SuccessResponse(c, "Packages fetched successfully", gin.H{
-		"items": pkgs,
-		"total": total,
-		"page":  page,
-		"limit": limit,
-	})
+	utils.SuccessResponse(c, "Packages fetched successfully", pkgs)
 }
 
 func (h *QurbanHandler) UpdatePackage(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := utils.ParseUintParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid package id"})
+		utils.HandleError(c, err)
 		return
 	}
 
-	var req qurbanDto.CreatePackageRequest
+	var req qurbanDto.PackageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.ValidationErrorResponse(c, err)
 		return
 	}
 
-	res, err := h.svc.UpdatePackage(uint(id), req)
+	res, err := h.svc.UpdatePackage(id, req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": res})
+	utils.SuccessResponse(c, "Package updated successfully", res)
 }
 
 func (h *QurbanHandler) DeletePackage(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := utils.ParseUintParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid package id"})
+		utils.HandleError(c, err)
 		return
 	}
 
-	if err := h.svc.DeletePackage(uint(id)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.svc.DeletePackage(id); err != nil {
+		utils.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	utils.SuccessResponse(c, "Package deleted successfully", nil)
 }
 
 func (h *QurbanHandler) CreateBooking(c *gin.Context) {
 	var req qurbanDto.CreateBookingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.ValidationErrorResponse(c, err)
 		return
 	}
+
 	res, err := h.svc.CreateBooking(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": res})
+	utils.CreatedResponse(c, "Booking created successfully", res)
 }
 
 func (h *QurbanHandler) GetBookings(c *gin.Context) {
 	res, err := h.svc.GetBookings()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": res})
+	utils.SuccessResponse(c, "Bookings fetched successfully", res)
 }
 
 func (h *QurbanHandler) CreateAnimal(c *gin.Context) {
-	var req qurbanDto.CreateAnimalRequest
+	var req qurbanDto.AnimalRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.ValidationErrorResponse(c, err)
 		return
 	}
+
 	res, err := h.svc.CreateAnimal(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": res})
+	utils.CreatedResponse(c, "Animal created successfully", res)
 }
 
 func (h *QurbanHandler) GetAnimals(c *gin.Context) {
 	res, err := h.svc.GetAnimals()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": res})
+	utils.SuccessResponse(c, "Animals fetched successfully", res)
 }
 
 func (h *QurbanHandler) UpdateAnimal(c *gin.Context) {
-	id := c.Param("id")
-	var req qurbanDto.CreateAnimalRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	id, err := utils.ParseUUIDParam(c, "id")
+	if err != nil {
+		utils.HandleError(c, err)
 		return
 	}
+
+	var req qurbanDto.AnimalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.ValidationErrorResponse(c, err)
+		return
+	}
+
 	res, err := h.svc.UpdateAnimal(id, req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": res})
+	utils.SuccessResponse(c, "Animal updated successfully", res)
 }
 
 func (h *QurbanHandler) DeleteAnimal(c *gin.Context) {
-	id := c.Param("id")
-	if err := h.svc.DeleteAnimal(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	id, err := utils.ParseUUIDParam(c, "id")
+	if err != nil {
+		utils.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+
+	if err := h.svc.DeleteAnimal(id); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.SuccessResponse(c, "Animal deleted successfully", nil)
 }

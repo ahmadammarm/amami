@@ -1,60 +1,46 @@
-import apiClient from '../client';
-import type { ApiResponse } from '../../types/api';
-import type { 
-  QurbanPackage, CreatePackagePayload, 
-  QurbanBooking, CreateBookingPayload,
-  QurbanAnimal, CreateAnimalPayload 
-} from '../../types/qurban';
+import { request } from '../client';
+import type { Page } from '../../types/api';
+import type { QurbanAnimal, QurbanBooking, QurbanPackage } from '../../types/qurban';
+import type { AnimalPayload, BookingPayload, PackagePayload } from '../../schemas/qurban';
 
 export const qurbanService = {
-  // Packages
-  async getPackages(page = 1, limit = 100): Promise<{ items: QurbanPackage[], total: number }> {
-    const response = await apiClient.get(`/qurban/packages?page=${page}&limit=${limit}`);
-    return response.data.data;
-  },
-  
-  async createPackage(payload: CreatePackagePayload): Promise<QurbanPackage> {
-    const response = await apiClient.post<ApiResponse<QurbanPackage>>('/qurban/packages', payload);
-    return response.data.data;
+  getPackages(page = 1, limit = 100): Promise<Page<QurbanPackage>> {
+    return request<Page<QurbanPackage>>({ method: 'GET', url: '/qurban/packages', params: { page, limit } });
   },
 
-  async updatePackage(id: number, payload: CreatePackagePayload): Promise<QurbanPackage> {
-    const response = await apiClient.put<ApiResponse<QurbanPackage>>(`/qurban/packages/${id}`, payload);
-    return response.data.data;
+  createPackage(payload: PackagePayload): Promise<QurbanPackage> {
+    return request<QurbanPackage>({ method: 'POST', url: '/qurban/packages', data: payload });
   },
 
-  async deletePackage(id: number): Promise<void> {
-    await apiClient.delete(`/qurban/packages/${id}`);
+  updatePackage(id: number, payload: PackagePayload): Promise<QurbanPackage> {
+    return request<QurbanPackage>({ method: 'PUT', url: `/qurban/packages/${id}`, data: payload });
   },
 
-  // Bookings
-  async getBookings(): Promise<QurbanBooking[]> {
-    const response = await apiClient.get<ApiResponse<QurbanBooking[]>>('/qurban/bookings');
-    return response.data.data;
+  deletePackage(id: number): Promise<void> {
+    return request<void>({ method: 'DELETE', url: `/qurban/packages/${id}` });
   },
 
-  async createBooking(payload: CreateBookingPayload): Promise<QurbanBooking> {
-    const response = await apiClient.post<ApiResponse<QurbanBooking>>('/qurban/bookings', payload);
-    return response.data.data;
+  getBookings(): Promise<QurbanBooking[]> {
+    return request<QurbanBooking[]>({ method: 'GET', url: '/qurban/bookings' });
   },
 
-  // Animals
-  async getAnimals(): Promise<QurbanAnimal[]> {
-    const response = await apiClient.get<ApiResponse<QurbanAnimal[]>>('/qurban/animals');
-    return response.data.data;
+  createBooking(payload: BookingPayload): Promise<QurbanBooking> {
+    return request<QurbanBooking>({ method: 'POST', url: '/qurban/bookings', data: payload });
   },
 
-  async createAnimal(payload: CreateAnimalPayload): Promise<QurbanAnimal> {
-    const response = await apiClient.post<ApiResponse<QurbanAnimal>>('/qurban/animals', payload);
-    return response.data.data;
+  getAnimals(): Promise<QurbanAnimal[]> {
+    return request<QurbanAnimal[]>({ method: 'GET', url: '/qurban/animals' });
   },
 
-  async updateAnimal(id: string, payload: CreateAnimalPayload): Promise<QurbanAnimal> {
-    const response = await apiClient.put<ApiResponse<QurbanAnimal>>(`/qurban/animals/${id}`, payload);
-    return response.data.data;
+  createAnimal(payload: AnimalPayload): Promise<QurbanAnimal> {
+    return request<QurbanAnimal>({ method: 'POST', url: '/qurban/animals', data: payload });
   },
 
-  async deleteAnimal(id: string): Promise<void> {
-    await apiClient.delete(`/qurban/animals/${id}`);
-  }
+  updateAnimal(id: string, payload: AnimalPayload): Promise<QurbanAnimal> {
+    return request<QurbanAnimal>({ method: 'PUT', url: `/qurban/animals/${id}`, data: payload });
+  },
+
+  deleteAnimal(id: string): Promise<void> {
+    return request<void>({ method: 'DELETE', url: `/qurban/animals/${id}` });
+  },
 };
