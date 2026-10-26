@@ -5,6 +5,7 @@ import { Permission } from '../lib/permissions';
 declare module 'vue-router' {
   interface RouteMeta {
     requiresAuth?: boolean;
+    /** Only for signed-out users (the login page); signed-in users are sent to the dashboard. */
     guest?: boolean;
     /** Permission code the user's role must hold to open the route. */
     permission?: Permission;
@@ -32,8 +33,8 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'Landing',
+    // Public for everyone; signed-in users see a dashboard button instead of login.
     component: () => import('../components/pages/LandingPage.vue'),
-    meta: { guest: true } // Assuming guests see this, or we just let anyone see it
   },
   {
     path: '/dashboard',
@@ -105,11 +106,14 @@ const router = createRouter({
 router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore();
 
+  // A stale token is dropped (fetchUser logs out on failure) and navigation
+  // continues as a guest: public pages stay open, protected ones fall through
+  // to the requiresAuth check below.
   if (authStore.token && !authStore.user) {
     try {
       await authStore.fetchUser();
-    } catch (e) {
-      return next({ name: 'Login' });
+    } catch {
+      // handled by fetchUser
     }
   }
 
@@ -131,7 +135,7 @@ router.beforeEach(async (to, _from, next) => {
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next({ name: 'Login' });
-  } else if (to.meta.guest && authStore.isAuthenticated && (to.name === 'Login' || to.name === 'Landing')) {
+  } else if (to.meta.guest && authStore.isAuthenticated) {
     next({ name: 'Dashboard' });
   } else {
     next();

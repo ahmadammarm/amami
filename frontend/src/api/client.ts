@@ -3,6 +3,14 @@ import type { ApiResponse } from '../types/api';
 
 const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
 const LOGIN_PATH = '/auth/login';
+const SESSION_PATH = '/auth/me';
+
+/**
+ * 401s that must not trigger the global redirect: a failed login is a form
+ * error, and the session check is resolved by the router guard (public pages
+ * such as the landing page stay open when a stored token has expired).
+ */
+const NO_REDIRECT_PATHS = new Set([LOGIN_PATH, SESSION_PATH]);
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -25,12 +33,11 @@ apiClient.interceptors.request.use(
   }
 );
 
-// Response Interceptor: Handle 401 Unauthorized.
-// A failed login also answers 401; that must surface as a form error, not a redirect.
+// Response Interceptor: an expired session on any other request sends the user to login.
 apiClient.interceptors.response.use(
   (response) => response,
   (error: Error) => {
-    if (axios.isAxiosError(error) && error.response?.status === 401 && error.config?.url !== LOGIN_PATH) {
+    if (axios.isAxiosError(error) && error.response?.status === 401 && !NO_REDIRECT_PATHS.has(error.config?.url ?? '')) {
       localStorage.removeItem('token');
       window.location.href = '/login';
     }
