@@ -3,37 +3,54 @@ import { computed, ref } from 'vue';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
 import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/zod';
+import { Plus, Undo2, ReceiptText } from 'lucide-vue-next';
 import { financeService } from '@/api/services/finance';
-import { feedback } from '@/composables/useFeedback';
 import { queryKeys } from '@/api/queryKeys';
+import { feedback } from '@/composables/useFeedback';
 import { useAuthStore } from '@/stores/auth';
 import { Permission } from '@/lib/permissions';
+import { formatDateTime, formatRupiah } from '@/lib/format';
 import { reversalSchema, transactionSchema } from '@/schemas/finance';
 import type { Transaction } from '@/types/finance';
+import PageHeader from '@/components/molecules/PageHeader.vue';
+import DataPanel from '@/components/molecules/DataPanel.vue';
+import PaginationBar from '@/components/molecules/PaginationBar.vue';
+import EmptyState from '@/components/molecules/EmptyState.vue';
+import StatusBadge from '@/components/molecules/StatusBadge.vue';
+import FormDialog from '@/components/molecules/FormDialog.vue';
+import FormField from '@/components/molecules/FormField.vue';
+import { Button } from '@/components/atoms/button';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/atoms/dialog';
 
 const authStore = useAuthStore();
 const queryClient = useQueryClient();
 
-// Fetch Data
+const PAGE_SIZE = 10;
+const currentPage = ref(1);
+
 const { data: funds, isLoading: isLoadingFunds } = useQuery({
   queryKey: queryKeys.finance.funds,
   queryFn: financeService.getFunds,
 });
 
-// Pagination State
-const currentPage = ref(1);
-const pageSize = ref(10);
-
-const { data: paginatedData, isLoading: isLoadingTransactions } = useQuery({
-  queryKey: computed(() => queryKeys.finance.transactions(currentPage.value, pageSize.value)),
-  queryFn: () => financeService.getTransactions(currentPage.value, pageSize.value),
+const { data: transactionPage, isLoading: isLoadingTransactions } = useQuery({
+  queryKey: computed(() => queryKeys.finance.transactions(currentPage.value, PAGE_SIZE)),
+  queryFn: () => financeService.getTransactions(currentPage.value, PAGE_SIZE),
+  placeholderData: (previous) => previous,
 });
 
-// Permissions
+const transactions = computed(() => transactionPage.value?.items ?? []);
 const canWrite = computed(() => authStore.can(Permission.LedgerWrite));
 
-// Transaction Form
-const showAddForm = ref(false);
+const fundName = (id: number) => funds.value?.find(f => f.id === id)?.name ?? `Kas #${id}`;
+
+const refreshLedger = () => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.finance.all });
+  queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.metrics });
+};
+
+// New transaction
+const showTransactionForm = ref(false);
 const emptyTransaction = { fund_id: 0, type: 'CREDIT', amount: 0, category: '', description: '' } as const;
 
 const {
@@ -52,9 +69,25 @@ const [amount] = defineTransactionField('amount');
 const [category] = defineTransactionField('category');
 const [description] = defineTransactionField('description');
 
-// Detail & Reversal State
-const showDetailDialog = ref(false);
-const selectedTransaction = ref<Transaction | null>(null);
+const createTxMutation = useMutation({
+  mutationFn: financeService.createTransaction,
+  onSuccess: (tx) => {
+    refreshLedger();
+    showTransactionForm.value = false;
+    feedback.success('Transaksi tersimpan', `${formatRupiah(tx.amount)} dicatat di ${fundName(tx.fund_id)}.`);
+  },
+  onError: (error: unknown) => feedback.error('Transaksi belum tersimpan', error),
+});
+
+const openTransactionForm = () => {
+  resetTransactionForm({ values: emptyTransaction });
+  showTransactionForm.value = true;
+};
+
+const submitTransaction = handleTransactionSubmit((values) => createTxMutation.mutate(values));
+
+// Detail and reversal
+const selected = ref<Transaction | null>(null);
 const showReversalForm = ref(false);
 
 const {
@@ -69,307 +102,212 @@ const {
 
 const [reason] = defineReversalField('reason');
 
-const paginatedTransactions = computed(() => paginatedData.value?.items ?? []);
-const totalPages = computed(() => paginatedData.value?.total_pages || 1);
-const totalRecords = computed(() => paginatedData.value?.total ?? 0);
-
-/** A transaction can be reversed once, and reversal entries themselves cannot be reversed. */
-const canReverseSelected = computed(() => {
-  const tx = selectedTransaction.value;
-  return canWrite.value && tx !== null && tx.reversal_of_id === null && tx.reversed_by_id === null;
-});
-
-const refreshLedger = () => {
-  queryClient.invalidateQueries({ queryKey: queryKeys.finance.all });
-  queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.metrics });
-};
-
-// Mutations
-const createTxMutation = useMutation({
-  mutationFn: financeService.createTransaction,
-  onSuccess: () => {
-    feedback.success('Transaksi tersimpan');
-    refreshLedger();
-    showAddForm.value = false;
-    resetTransactionForm();
-  },
-  onError: (error: unknown) => {
-    feedback.error('Transaksi belum tersimpan', error);
-  },
-});
+/** Each transaction can be reversed once; reversal entries cannot be reversed. */
+const canReverse = (tx: Transaction) => canWrite.value && tx.reversal_of_id === null && tx.reversed_by_id === null;
 
 const reverseTxMutation = useMutation({
   mutationFn: ({ id, reason }: { id: string; reason: string }) => financeService.reverseTransaction(id, { reason }),
   onSuccess: () => {
-    feedback.success('Transaksi dibatalkan', 'Entri pembalik sudah dicatat dan saldo kas disesuaikan.');
     refreshLedger();
-    closeDetail();
+    showReversalForm.value = false;
+    selected.value = null;
+    feedback.success('Transaksi dibatalkan', 'Entri pembalik sudah dicatat dan saldo kas disesuaikan.');
   },
-  onError: (error: unknown) => {
-    feedback.error('Transaksi belum dibatalkan', error);
-  },
+  onError: (error: unknown) => feedback.error('Transaksi belum dibatalkan', error),
 });
 
-const submitTransaction = handleTransactionSubmit((values) => {
-  createTxMutation.mutate(values);
-});
+const openReversal = () => {
+  resetReversalForm({ values: { reason: '' } });
+  showReversalForm.value = true;
+};
 
-// Reversal Logic (Immutable Ledger rule): corrections are new offsetting entries.
 const submitReversal = handleReversalSubmit((values) => {
-  if (!selectedTransaction.value) return;
-  reverseTxMutation.mutate({ id: selectedTransaction.value.id, reason: values.reason });
+  if (selected.value) reverseTxMutation.mutate({ id: selected.value.id, reason: values.reason });
 });
 
-// Actions
-const openDetail = (tx: Transaction) => {
-  selectedTransaction.value = tx;
-  showReversalForm.value = false;
-  resetReversalForm();
-  showDetailDialog.value = true;
-};
-
-const closeDetail = () => {
-  showDetailDialog.value = false;
-  showReversalForm.value = false;
-  selectedTransaction.value = null;
-};
-
-const getFundName = (id: number) => {
-  return funds.value?.find(f => f.id === id)?.name || `Fund #${id}`;
-};
-
-// Utils
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(value);
-};
-
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('id-ID', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+const onDetailOpenChange = (open: boolean) => {
+  if (!open) selected.value = null;
 };
 </script>
 
 <template>
-  <div class="space-y-6">
-    <!-- Header -->
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight text-gray-900">Financial Ledger</h1>
-        <p class="text-sm text-gray-500">Manage mosque funds and track immutable transactions.</p>
-      </div>
-      <button
-        v-if="canWrite"
-        @click="showAddForm = !showAddForm"
-        class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background bg-blue-600 text-white hover:bg-blue-700 h-10 py-2 px-4"
-      >
-        {{ showAddForm ? 'Close Form' : 'New Transaction' }}
-      </button>
-    </div>
+  <div class="space-y-8">
+    <PageHeader title="Keuangan" description="Buku kas masjid. Setiap entri bersifat permanen; kesalahan dikoreksi dengan entri pembalik.">
+      <template v-if="canWrite" #actions>
+        <Button @click="openTransactionForm"><Plus /> Catat transaksi</Button>
+      </template>
+    </PageHeader>
 
-    <!-- Fund Summaries -->
-    <div v-if="isLoadingFunds" class="text-gray-500">Loading funds...</div>
-    <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      <div v-for="fund in funds" :key="fund.id" class="rounded-xl border bg-white text-gray-900 shadow-sm p-6">
-        <h3 class="text-sm font-medium text-gray-500">{{ fund.name }}</h3>
-        <div class="mt-2 text-3xl font-bold">{{ formatCurrency(fund.current_balance) }}</div>
-        <p class="text-xs text-gray-400 mt-1">Code: {{ fund.code }}</p>
-      </div>
+    <!-- Funds -->
+    <div v-if="isLoadingFunds" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div v-for="i in 3" :key="i" class="h-28 animate-pulse rounded-xl bg-batu/60" />
     </div>
-
-    <!-- Add Transaction Form -->
-    <div v-if="showAddForm && canWrite" class="rounded-xl border bg-gray-50 p-6 shadow-sm">
-      <h3 class="text-lg font-medium text-gray-900 mb-4">Record New Transaction</h3>
-      <form @submit="submitTransaction" class="space-y-4" novalidate>
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Fund</label>
-            <select v-model.number="fundId" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border bg-white">
-              <option :value="0" disabled>Select a fund...</option>
-              <option v-for="fund in funds" :key="fund.id" :value="fund.id">{{ fund.name }}</option>
-            </select>
-            <p v-if="transactionErrors.fund_id" class="mt-1 text-xs text-red-600">{{ transactionErrors.fund_id }}</p>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Type</label>
-            <select v-model="txType" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border bg-white">
-              <option value="CREDIT">Inflow (Credit)</option>
-              <option value="DEBIT">Outflow (Debit)</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Amount (IDR)</label>
-            <input type="number" v-model.number="amount" min="1" step="1" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border" />
-            <p v-if="transactionErrors.amount" class="mt-1 text-xs text-red-600">{{ transactionErrors.amount }}</p>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Category</label>
-            <input type="text" v-model="category" placeholder="e.g., Sedekah Jumat" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border" />
-            <p v-if="transactionErrors.category" class="mt-1 text-xs text-red-600">{{ transactionErrors.category }}</p>
-          </div>
-          <div class="md:col-span-2">
-            <label class="block text-sm font-medium text-gray-700">Description (Optional)</label>
-            <input type="text" v-model="description" placeholder="Notes about this transaction..." class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border" />
-            <p v-if="transactionErrors.description" class="mt-1 text-xs text-red-600">{{ transactionErrors.description }}</p>
-          </div>
+    <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div v-for="fund in funds" :key="fund.id" class="rounded-xl border border-batu bg-white p-5 shadow-sm">
+        <div class="flex items-center justify-between gap-3">
+          <p class="font-medium text-jati">{{ fund.name }}</p>
+          <span class="font-mono text-xs text-jati-muda">{{ fund.code }}</span>
         </div>
-        <div class="flex justify-end">
-          <button type="submit" :disabled="createTxMutation.isPending.value" class="inline-flex items-center justify-center rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 h-10 py-2 px-4 disabled:opacity-50">
-            {{ createTxMutation.isPending.value ? 'Saving...' : 'Save Transaction' }}
-          </button>
-        </div>
-      </form>
+        <p class="tabular mt-3 text-2xl font-semibold text-jati">{{ formatRupiah(fund.current_balance) }}</p>
+      </div>
     </div>
 
-    <!-- Ledger Table with Pagination -->
-    <div class="rounded-xl border bg-white shadow-sm overflow-hidden">
-      <div class="px-6 py-4 border-b flex justify-between items-center">
-        <h3 class="text-lg font-medium text-gray-900">Transaction History</h3>
-      </div>
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm text-left">
-          <thead class="text-xs text-gray-700 uppercase bg-gray-50 border-b">
+    <!-- Ledger -->
+    <DataPanel title="Riwayat transaksi" description="Urut dari yang terbaru.">
+      <div v-if="isLoadingTransactions" class="p-8 text-center text-sm text-jati-muda">Memuat transaksi…</div>
+      <EmptyState
+        v-else-if="transactions.length === 0"
+        :icon="ReceiptText"
+        title="Belum ada transaksi"
+        :description="canWrite ? 'Catat pemasukan atau pengeluaran pertama untuk mulai mengisi buku kas.' : 'Transaksi yang dicatat bendahara akan muncul di sini.'"
+      />
+      <div v-else class="overflow-x-auto">
+        <table class="tabel min-w-[760px]">
+          <thead>
             <tr>
-              <th class="px-6 py-3">Date</th>
-              <th class="px-6 py-3">Fund</th>
-              <th class="px-6 py-3">Category</th>
-              <th class="px-6 py-3">Type</th>
-              <th class="px-6 py-3">Amount</th>
-              <th class="px-6 py-3 text-right">Action</th>
+              <th>Tanggal</th>
+              <th>Kas</th>
+              <th>Kategori</th>
+              <th class="text-right">Nominal</th>
+              <th class="w-24"><span class="sr-only">Aksi</span></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="isLoadingTransactions">
-              <td colspan="6" class="px-6 py-4 text-center text-gray-500">Loading transactions...</td>
-            </tr>
-            <tr v-else-if="paginatedTransactions.length === 0">
-              <td colspan="6" class="px-6 py-4 text-center text-gray-500">No transactions found.</td>
-            </tr>
-            <tr v-else v-for="tx in paginatedTransactions" :key="tx.id" class="border-b hover:bg-gray-50 transition-colors">
-              <td class="px-6 py-4 text-gray-500 whitespace-nowrap">{{ formatDate(tx.created_at) }}</td>
-              <td class="px-6 py-4 text-gray-700 font-medium">{{ getFundName(tx.fund_id) }}</td>
-              <td class="px-6 py-4 font-medium text-gray-900">
-                {{ tx.category }}
-                <span v-if="tx.reversed_by_id" class="ml-2 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-200 text-gray-600">Reversed</span>
-                <span v-if="tx.reversal_of_id" class="ml-2 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700">Reversal</span>
+            <tr v-for="tx in transactions" :key="tx.id">
+              <td class="whitespace-nowrap text-jati-muda">{{ formatDateTime(tx.created_at) }}</td>
+              <td>{{ fundName(tx.fund_id) }}</td>
+              <td>
+                <span class="font-medium">{{ tx.category }}</span>
+                <StatusBadge v-if="tx.reversal_of_id" tone="kuningan" class="ml-2">Pembalik</StatusBadge>
+                <StatusBadge v-else-if="tx.reversed_by_id" class="ml-2">Dibatalkan</StatusBadge>
               </td>
-              <td class="px-6 py-4">
-                <span :class="['px-2 py-1 rounded-full text-xs font-medium', tx.type === 'CREDIT' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700']">
-                  {{ tx.type }}
-                </span>
+              <td
+                class="tabular whitespace-nowrap text-right font-semibold"
+                :class="[tx.type === 'CREDIT' ? 'text-sajadah' : 'text-bata', { 'line-through opacity-60': tx.reversed_by_id }]"
+              >
+                {{ tx.type === 'CREDIT' ? '+' : '−' }} {{ formatRupiah(tx.amount) }}
               </td>
-              <td class="px-6 py-4 font-mono font-medium" :class="{ 'line-through text-gray-400': tx.reversed_by_id }">
-                {{ formatCurrency(tx.amount) }}
-              </td>
-              <td class="px-6 py-4 text-right">
-                <button @click="openDetail(tx)" class="text-blue-600 hover:text-blue-900 font-medium text-sm">View Details</button>
+              <td class="text-right">
+                <button type="button" class="text-sm font-medium text-sajadah hover:text-sajadah-tua" @click="selected = tx">
+                  Detail
+                </button>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <!-- Pagination Controls -->
-      <div class="px-6 py-4 border-t flex items-center justify-between text-sm text-gray-500 bg-gray-50">
-        <div>
-          Showing <span class="font-medium">{{ totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1 }}</span> to
-          <span class="font-medium">{{ Math.min(currentPage * pageSize, totalRecords) }}</span> of
-          <span class="font-medium">{{ totalRecords }}</span> entries
-        </div>
-        <div class="flex space-x-2">
-          <button @click="currentPage--" :disabled="currentPage === 1" class="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50">Previous</button>
-          <button @click="currentPage++" :disabled="currentPage >= totalPages" class="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50">Next</button>
-        </div>
-      </div>
-    </div>
-  </div>
+      <template v-if="transactionPage && transactionPage.total > 0" #footer>
+        <PaginationBar
+          v-model:page="currentPage"
+          :page-size="PAGE_SIZE"
+          :total="transactionPage.total"
+          :total-pages="transactionPage.total_pages"
+          noun="transaksi"
+        />
+      </template>
+    </DataPanel>
 
-  <!-- Detail Dialog Modal -->
-  <div v-if="showDetailDialog && selectedTransaction" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-    <div class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
-      <div class="px-6 py-4 border-b flex justify-between items-center bg-gray-50">
-        <h3 class="text-lg font-bold text-gray-900">Transaction Details</h3>
-        <button @click="closeDetail" class="text-gray-400 hover:text-gray-600">&times;</button>
-      </div>
-      <div class="p-6 space-y-4">
-        <div>
-          <p class="text-sm text-gray-500">Transaction ID</p>
-          <p class="font-mono text-xs mt-1">{{ selectedTransaction.id }}</p>
+    <!-- New transaction -->
+    <FormDialog
+      v-model:open="showTransactionForm"
+      title="Catat transaksi"
+      description="Transaksi tidak bisa diubah setelah disimpan. Periksa nominal dan kas tujuannya."
+      submit-label="Simpan transaksi"
+      :submitting="createTxMutation.isPending.value"
+      @submit="submitTransaction"
+    >
+      <FormField label="Kas" for="tx-fund" :error="transactionErrors.fund_id" required>
+        <select id="tx-fund" v-model.number="fundId" class="field-control" :aria-invalid="Boolean(transactionErrors.fund_id)">
+          <option :value="0" disabled>Pilih kas</option>
+          <option v-for="fund in funds" :key="fund.id" :value="fund.id">{{ fund.name }} ({{ formatRupiah(fund.current_balance) }})</option>
+        </select>
+      </FormField>
+      <fieldset>
+        <legend class="mb-1.5 text-sm font-medium text-jati">Jenis</legend>
+        <div class="grid grid-cols-2 gap-2">
+          <label
+            v-for="option in [{ value: 'CREDIT', label: 'Pemasukan' }, { value: 'DEBIT', label: 'Pengeluaran' }]"
+            :key="option.value"
+            class="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors"
+            :class="txType === option.value ? 'border-sajadah bg-sajadah-muda text-sajadah-tua' : 'border-batu-tua text-jati'"
+          >
+            <input v-model="txType" type="radio" :value="option.value" class="accent-sajadah" />
+            {{ option.label }}
+          </label>
         </div>
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <p class="text-sm text-gray-500">Date</p>
-            <p class="font-medium">{{ formatDate(selectedTransaction.created_at) }}</p>
-          </div>
-          <div>
-            <p class="text-sm text-gray-500">Fund</p>
-            <p class="font-medium">{{ getFundName(selectedTransaction.fund_id) }}</p>
-          </div>
-          <div>
-            <p class="text-sm text-gray-500">Type</p>
-            <span :class="['inline-block px-2 py-1 rounded-full text-xs font-medium mt-1', selectedTransaction.type === 'CREDIT' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700']">
-              {{ selectedTransaction.type }}
-            </span>
-          </div>
-          <div>
-            <p class="text-sm text-gray-500">Amount</p>
-            <p class="font-mono font-bold">{{ formatCurrency(selectedTransaction.amount) }}</p>
-          </div>
-          <div class="col-span-2">
-            <p class="text-sm text-gray-500">Category</p>
-            <p class="font-medium">{{ selectedTransaction.category }}</p>
-          </div>
-          <div class="col-span-2" v-if="selectedTransaction.description">
-            <p class="text-sm text-gray-500">Description</p>
-            <p class="font-medium">{{ selectedTransaction.description }}</p>
-          </div>
-          <div class="col-span-2" v-if="selectedTransaction.reversal_of_id">
-            <p class="text-sm text-gray-500">Reverses Transaction</p>
-            <p class="font-mono text-xs">{{ selectedTransaction.reversal_of_id }}</p>
-          </div>
-          <div class="col-span-2" v-if="selectedTransaction.reversed_by_id">
-            <p class="text-sm text-gray-500">Reversed By</p>
-            <p class="font-mono text-xs">{{ selectedTransaction.reversed_by_id }}</p>
-          </div>
-          <div class="col-span-2" v-if="selectedTransaction.reference_id">
-            <p class="text-sm text-gray-500">Reference ID</p>
-            <p class="font-mono text-xs">{{ selectedTransaction.reference_id }}</p>
-          </div>
+      </fieldset>
+      <FormField label="Nominal (Rp)" for="tx-amount" :error="transactionErrors.amount" required>
+        <input id="tx-amount" v-model.number="amount" type="number" min="1" step="1" class="field-control tabular" :aria-invalid="Boolean(transactionErrors.amount)" />
+      </FormField>
+      <FormField label="Kategori" for="tx-category" :error="transactionErrors.category" hint="Contoh: Infaq Jumat, Listrik, Kegiatan." required>
+        <input id="tx-category" v-model="category" type="text" class="field-control" :aria-invalid="Boolean(transactionErrors.category)" />
+      </FormField>
+      <FormField label="Keterangan" for="tx-description" :error="transactionErrors.description">
+        <input id="tx-description" v-model="description" type="text" class="field-control" />
+      </FormField>
+    </FormDialog>
+
+    <!-- Transaction detail -->
+    <Dialog :open="selected !== null && !showReversalForm" @update:open="onDetailOpenChange">
+      <DialogContent v-if="selected" class="gap-0 rounded-2xl border-batu p-0 sm:max-w-md">
+        <div class="border-b border-batu px-6 pt-6 pb-4 pr-12">
+          <DialogTitle class="font-display text-xl font-semibold tracking-wide">Detail transaksi</DialogTitle>
+          <DialogDescription class="mt-1 font-mono text-xs text-jati-muda">{{ selected.id }}</DialogDescription>
         </div>
-
-        <!-- Reversal Entry Form -->
-        <form v-if="showReversalForm" @submit="submitReversal" class="rounded-lg border border-red-200 bg-red-50 p-4 space-y-3" novalidate>
-          <p class="text-sm text-red-800">
-            The ledger is immutable. A reversal posts an opposite entry of
-            <span class="font-semibold">{{ formatCurrency(selectedTransaction.amount) }}</span> to the same fund.
-          </p>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Reason</label>
-            <textarea v-model="reason" rows="2" placeholder="e.g., Duplicate entry" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2 border bg-white"></textarea>
-            <p v-if="reversalErrors.reason" class="mt-1 text-xs text-red-600">{{ reversalErrors.reason }}</p>
+        <dl class="shaf px-6 text-sm">
+          <div class="flex justify-between gap-4 py-3">
+            <dt class="text-jati-muda">Nominal</dt>
+            <dd class="tabular font-semibold" :class="selected.type === 'CREDIT' ? 'text-sajadah' : 'text-bata'">
+              {{ selected.type === 'CREDIT' ? 'Pemasukan' : 'Pengeluaran' }} {{ formatRupiah(selected.amount) }}
+            </dd>
           </div>
-          <div class="flex justify-end gap-2">
-            <button type="button" @click="showReversalForm = false" class="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border rounded-md hover:bg-gray-50">Cancel</button>
-            <button type="submit" :disabled="reverseTxMutation.isPending.value" class="px-3 py-1.5 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50">
-              {{ reverseTxMutation.isPending.value ? 'Posting...' : 'Confirm Reversal' }}
-            </button>
+          <div class="flex justify-between gap-4 py-3">
+            <dt class="text-jati-muda">Kas</dt>
+            <dd>{{ fundName(selected.fund_id) }}</dd>
           </div>
-        </form>
-      </div>
+          <div class="flex justify-between gap-4 py-3">
+            <dt class="text-jati-muda">Tanggal</dt>
+            <dd>{{ formatDateTime(selected.created_at) }}</dd>
+          </div>
+          <div class="flex justify-between gap-4 py-3">
+            <dt class="text-jati-muda">Kategori</dt>
+            <dd>{{ selected.category }}</dd>
+          </div>
+          <div v-if="selected.description" class="flex justify-between gap-4 py-3">
+            <dt class="text-jati-muda">Keterangan</dt>
+            <dd class="text-right">{{ selected.description }}</dd>
+          </div>
+          <div v-if="selected.reversal_of_id" class="py-3">
+            <dt class="text-jati-muda">Membatalkan transaksi</dt>
+            <dd class="mt-1 font-mono text-xs">{{ selected.reversal_of_id }}</dd>
+          </div>
+          <div v-if="selected.reversed_by_id" class="py-3">
+            <dt class="text-jati-muda">Dibatalkan oleh entri</dt>
+            <dd class="mt-1 font-mono text-xs">{{ selected.reversed_by_id }}</dd>
+          </div>
+        </dl>
+        <div class="flex justify-end gap-2 border-t border-batu bg-kapur/60 px-6 py-4">
+          <Button v-if="canReverse(selected)" variant="outline" class="text-bata hover:text-bata" @click="openReversal">
+            <Undo2 /> Batalkan transaksi
+          </Button>
+          <Button @click="selected = null">Tutup</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
 
-      <!-- Immutable Ledger Actions -->
-      <div class="px-6 py-4 border-t bg-gray-50 flex justify-end space-x-3">
-        <button @click="closeDetail" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border rounded-md hover:bg-gray-50">
-          Close
-        </button>
-        <!-- Replace Edit/Delete with Reverse -->
-        <button v-if="canReverseSelected && !showReversalForm" @click="showReversalForm = true" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 transition-colors shadow-sm">
-          Reverse Transaction
-        </button>
-      </div>
-    </div>
+    <!-- Reversal -->
+    <FormDialog
+      v-model:open="showReversalForm"
+      title="Batalkan transaksi"
+      :description="selected ? `Entri ${selected.type === 'CREDIT' ? 'pengeluaran' : 'pemasukan'} sebesar ${formatRupiah(selected.amount)} akan dicatat di ${fundName(selected.fund_id)} untuk menyeimbangkan transaksi ini.` : undefined"
+      submit-label="Catat pembatalan"
+      tone="danger"
+      :submitting="reverseTxMutation.isPending.value"
+      @submit="submitReversal"
+    >
+      <FormField label="Alasan" for="reversal-reason" :error="reversalErrors.reason" hint="Akan tersimpan sebagai keterangan entri pembalik." required>
+        <textarea id="reversal-reason" v-model="reason" rows="3" class="field-control" placeholder="Contoh: Tercatat dua kali" :aria-invalid="Boolean(reversalErrors.reason)" />
+      </FormField>
+    </FormDialog>
   </div>
 </template>

@@ -3,23 +3,59 @@ import { ref, computed } from 'vue';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
 import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/zod';
+import { Plus, Pencil, Trash2, PackageSearch, TriangleAlert } from 'lucide-vue-next';
 import { inventoryService } from '../../api/services/inventory';
-import { feedback } from '../../composables/useFeedback';
 import { queryKeys } from '../../api/queryKeys';
+import { feedback } from '../../composables/useFeedback';
 import { useAuthStore } from '../../stores/auth';
 import { Permission } from '../../lib/permissions';
+import { formatDate, formatNumber, formatRupiah } from '../../lib/format';
 import { assetSchema, toAssetPayload, type AssetFormValues, type AssetPayload } from '../../schemas/inventory';
 import type { Asset, AssetStatus } from '../../types/inventory';
-import { PlusIcon, XIcon, TrashIcon, BoxIcon, EditIcon, CheckCircleIcon, WrenchIcon, AlertTriangleIcon, RepeatIcon } from 'lucide-vue-next';
+import type { BadgeTone } from '../../types/ui';
+import PageHeader from '../molecules/PageHeader.vue';
+import DataPanel from '../molecules/DataPanel.vue';
+import EmptyState from '../molecules/EmptyState.vue';
+import StatCard from '../molecules/StatCard.vue';
+import StatusBadge from '../molecules/StatusBadge.vue';
+import FormDialog from '../molecules/FormDialog.vue';
+import FormField from '../molecules/FormField.vue';
+import { Button } from '../atoms/button';
+
+const ASSET_STATUS: Record<AssetStatus, { label: string; tone: BadgeTone }> = {
+  GOOD: { label: 'Baik', tone: 'sajadah' },
+  LOANED: { label: 'Dipinjam', tone: 'kuningan' },
+  NEEDS_REPAIR: { label: 'Perlu perbaikan', tone: 'kuningan' },
+  REPAIR: { label: 'Sedang diperbaiki', tone: 'netral' },
+  BROKEN: { label: 'Rusak', tone: 'bata' },
+};
+
+/** LOANED is set by the loan workflow, so it is never offered as a manual choice. */
+const EDITABLE_STATUSES: AssetStatus[] = ['GOOD', 'NEEDS_REPAIR', 'REPAIR', 'BROKEN'];
 
 const authStore = useAuthStore();
 const queryClient = useQueryClient();
 
 const canManage = computed(() => authStore.can(Permission.InventoryManage));
 
-const showAddDialog = ref(false);
-const editingAsset = ref<Asset | null>(null);
+const { data: assets, isLoading } = useQuery({
+  queryKey: queryKeys.inventory.assets,
+  queryFn: () => inventoryService.getAssets(1, 100),
+});
 
+const assetItems = computed(() => assets.value?.items ?? []);
+const countByStatus = (...statuses: AssetStatus[]) =>
+  assetItems.value.filter(a => statuses.includes(a.current_status)).length;
+const problemCount = computed(() => countByStatus('NEEDS_REPAIR', 'REPAIR', 'BROKEN'));
+
+const refreshAssets = () => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.inventory.all });
+  queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.metrics });
+};
+
+// Create / edit
+const showForm = ref(false);
+const editing = ref<Asset | null>(null);
 const emptyForm: AssetFormValues = {
   name: '',
   sku: '',
@@ -41,93 +77,46 @@ const [purchasePrice] = defineField('purchase_price');
 const [currentStatus] = defineField('current_status');
 const [location] = defineField('location');
 
-/** LOANED is set by the loan workflow; it is only shown for an asset that is already on loan. */
-const isOnLoan = computed(() => editingAsset.value?.current_status === 'LOANED');
+const isOnLoan = computed(() => editing.value?.current_status === 'LOANED');
 
-const { data: assets, isLoading } = useQuery({
-  queryKey: queryKeys.inventory.assets,
-  queryFn: () => inventoryService.getAssets(1, 100)
+const saveMutation = useMutation({
+  mutationFn: (payload: AssetPayload) =>
+    editing.value ? inventoryService.updateAsset(editing.value.id, payload) : inventoryService.createAsset(payload),
+  onSuccess: (asset) => {
+    const wasEditing = editing.value !== null;
+    refreshAssets();
+    showForm.value = false;
+    feedback.success(wasEditing ? 'Aset diperbarui' : 'Aset ditambahkan', `${asset.name} (${asset.sku}).`);
+  },
+  onError: (error: unknown) => feedback.error('Aset belum disimpan', error),
 });
 
-const assetItems = computed(() => assets.value?.items ?? []);
-const countByStatus = (...statuses: AssetStatus[]) =>
-  assetItems.value.filter(a => statuses.includes(a.current_status)).length;
-
-const totalAssets = computed(() => assets.value?.total ?? 0);
-const goodAssets = computed(() => countByStatus('GOOD'));
-const loanedAssets = computed(() => countByStatus('LOANED'));
-const repairAssets = computed(() => countByStatus('REPAIR', 'NEEDS_REPAIR'));
-const brokenAssets = computed(() => countByStatus('BROKEN'));
-
-const refreshAssets = () => {
-  queryClient.invalidateQueries({ queryKey: queryKeys.inventory.all });
-  queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.metrics });
+const openForm = (asset: Asset | null) => {
+  editing.value = asset;
+  resetForm({
+    values: asset
+      ? {
+        name: asset.name,
+        sku: asset.sku,
+        purchase_date: asset.purchase_date ? asset.purchase_date.slice(0, 10) : null,
+        purchase_price: asset.purchase_price,
+        current_status: asset.current_status,
+        location: asset.location,
+      }
+      : emptyForm,
+  });
+  showForm.value = true;
 };
 
-const createMutation = useMutation({
-  mutationFn: inventoryService.createAsset,
-  onSuccess: () => {
-    feedback.success('Aset ditambahkan');
-    refreshAssets();
-    closeDialog();
-  },
-  onError: (error: unknown) => feedback.error('Aset belum ditambahkan', error)
-});
-
-const updateMutation = useMutation({
-  mutationFn: ({ id, payload }: { id: string, payload: AssetPayload }) => inventoryService.updateAsset(id, payload),
-  onSuccess: () => {
-    feedback.success('Aset diperbarui');
-    refreshAssets();
-    closeDialog();
-  },
-  onError: (error: unknown) => feedback.error('Aset belum diperbarui', error)
-});
+const submitForm = handleSubmit((values) => saveMutation.mutate(toAssetPayload(values)));
 
 const deleteMutation = useMutation({
   mutationFn: inventoryService.deleteAsset,
   onSuccess: () => {
-    feedback.success('Aset dihapus');
     refreshAssets();
+    feedback.success('Aset dihapus');
   },
-  onError: (error: unknown) => feedback.error('Aset belum dihapus', error)
-});
-
-const isSaving = computed(() => createMutation.isPending.value || updateMutation.isPending.value);
-
-const openCreateDialog = () => {
-  editingAsset.value = null;
-  resetForm({ values: emptyForm });
-  showAddDialog.value = true;
-};
-
-const openEditDialog = (asset: Asset) => {
-  editingAsset.value = asset;
-  resetForm({
-    values: {
-      name: asset.name,
-      sku: asset.sku,
-      purchase_date: asset.purchase_date ? asset.purchase_date.slice(0, 10) : null,
-      purchase_price: asset.purchase_price,
-      current_status: asset.current_status,
-      location: asset.location,
-    },
-  });
-  showAddDialog.value = true;
-};
-
-const closeDialog = () => {
-  showAddDialog.value = false;
-  editingAsset.value = null;
-};
-
-const submitAsset = handleSubmit((values) => {
-  const payload = toAssetPayload(values);
-  if (editingAsset.value) {
-    updateMutation.mutate({ id: editingAsset.value.id, payload });
-  } else {
-    createMutation.mutate(payload);
-  }
+  onError: (error: unknown) => feedback.error('Aset belum dihapus', error),
 });
 
 const confirmDelete = async (asset: Asset) => {
@@ -139,205 +128,120 @@ const confirmDelete = async (asset: Asset) => {
   });
   if (confirmed) deleteMutation.mutate(asset.id);
 };
-
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount);
-};
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-      <div>
-        <h2 class="text-2xl font-bold text-gray-900">Inventaris & Aset</h2>
-        <p class="mt-1 text-sm text-gray-500">Kelola daftar aset masjid dan peminjaman</p>
-      </div>
-      <button v-if="canManage" @click="openCreateDialog" class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 focus:ring-4 focus:ring-emerald-100 transition-colors flex items-center gap-2">
-        <PlusIcon class="w-5 h-5" />
-        Tambah Aset
-      </button>
+  <div class="space-y-8">
+    <PageHeader title="Inventaris" description="Aset milik masjid beserta lokasi dan kondisinya.">
+      <template v-if="canManage" #actions>
+        <Button @click="openForm(null)"><Plus /> Tambah aset</Button>
+      </template>
+    </PageHeader>
+
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <StatCard label="Total aset" :value="formatNumber(assets?.total ?? 0)" />
+      <StatCard label="Kondisi baik" :value="formatNumber(countByStatus('GOOD'))" />
+      <StatCard label="Dipinjam" :value="formatNumber(countByStatus('LOANED'))" />
+      <StatCard
+        label="Bermasalah"
+        :value="formatNumber(problemCount)"
+        hint="perlu perbaikan, diperbaiki, atau rusak"
+        :icon="TriangleAlert"
+        :tone="problemCount > 0 ? 'alert' : 'default'"
+      />
     </div>
 
-    <!-- Stats -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-        <div class="flex items-center gap-4">
-          <div class="p-3 bg-blue-50 text-blue-600 rounded-xl">
-            <BoxIcon class="w-6 h-6" />
-          </div>
-          <div>
-            <p class="text-sm font-medium text-gray-500">Total Aset</p>
-            <p class="text-2xl font-bold text-gray-900">{{ totalAssets }}</p>
-          </div>
-        </div>
-      </div>
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-        <div class="flex items-center gap-4">
-          <div class="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-            <CheckCircleIcon class="w-6 h-6" />
-          </div>
-          <div>
-            <p class="text-sm font-medium text-gray-500">Kondisi Baik</p>
-            <p class="text-2xl font-bold text-gray-900">{{ goodAssets }}</p>
-          </div>
-        </div>
-      </div>
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-        <div class="flex items-center gap-4">
-          <div class="p-3 bg-purple-50 text-purple-600 rounded-xl">
-            <RepeatIcon class="w-6 h-6" />
-          </div>
-          <div>
-            <p class="text-sm font-medium text-gray-500">Dipinjam</p>
-            <p class="text-2xl font-bold text-gray-900">{{ loanedAssets }}</p>
-          </div>
-        </div>
-      </div>
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-        <div class="flex items-center gap-4">
-          <div class="p-3 bg-amber-50 text-amber-600 rounded-xl">
-            <WrenchIcon class="w-6 h-6" />
-          </div>
-          <div>
-            <p class="text-sm font-medium text-gray-500">Perlu Perbaikan</p>
-            <p class="text-2xl font-bold text-gray-900">{{ repairAssets }}</p>
-          </div>
-        </div>
-      </div>
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-        <div class="flex items-center gap-4">
-          <div class="p-3 bg-red-50 text-red-600 rounded-xl">
-            <AlertTriangleIcon class="w-6 h-6" />
-          </div>
-          <div>
-            <p class="text-sm font-medium text-gray-500">Rusak</p>
-            <p class="text-2xl font-bold text-gray-900">{{ brokenAssets }}</p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Asset List -->
-    <div class="bg-white shadow-sm rounded-xl border border-gray-100 overflow-hidden">
-      <div class="p-6 border-b border-gray-100">
-        <h3 class="font-semibold text-gray-900">Daftar Aset</h3>
-      </div>
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm text-left">
-          <thead class="text-xs text-gray-500 bg-gray-50 uppercase">
+    <DataPanel title="Daftar aset">
+      <div v-if="isLoading" class="p-8 text-center text-sm text-jati-muda">Memuat aset…</div>
+      <EmptyState
+        v-else-if="assetItems.length === 0"
+        :icon="PackageSearch"
+        title="Belum ada aset tercatat"
+        :description="canManage ? 'Catat aset masjid agar kondisi dan peminjamannya bisa dipantau.' : 'Aset yang dicatat pengurus akan tampil di sini.'"
+      />
+      <div v-else class="overflow-x-auto">
+        <table class="tabel min-w-[760px]">
+          <thead>
             <tr>
-              <th class="px-6 py-4 font-medium">Nama Aset / SKU</th>
-              <th class="px-6 py-4 font-medium">Lokasi</th>
-              <th class="px-6 py-4 font-medium">Status</th>
-              <th class="px-6 py-4 font-medium">Harga Beli</th>
-              <th v-if="canManage" class="px-6 py-4 font-medium text-right">Aksi</th>
+              <th>Aset</th>
+              <th>Lokasi</th>
+              <th>Kondisi</th>
+              <th class="text-right">Harga beli</th>
+              <th v-if="canManage" class="w-24"><span class="sr-only">Aksi</span></th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-100">
-            <tr v-if="isLoading" class="animate-pulse">
-              <td colspan="5" class="px-6 py-4 text-center text-gray-500">Memuat data...</td>
-            </tr>
-            <tr v-else-if="assetItems.length === 0">
-              <td colspan="5" class="px-6 py-12 text-center text-gray-500">
-                <BoxIcon class="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                Belum ada data aset
+          <tbody>
+            <tr v-for="asset in assetItems" :key="asset.id">
+              <td>
+                <p class="font-medium">{{ asset.name }}</p>
+                <p class="font-mono text-xs text-jati-muda">{{ asset.sku }}</p>
               </td>
-            </tr>
-            <tr v-else v-for="asset in assetItems" :key="asset.id" class="hover:bg-gray-50 transition-colors">
-              <td class="px-6 py-4">
-                <div class="font-medium text-gray-900">{{ asset.name }}</div>
-                <div class="text-xs text-gray-500">{{ asset.sku }}</div>
+              <td class="text-jati-muda">{{ asset.location || '–' }}</td>
+              <td><StatusBadge :tone="ASSET_STATUS[asset.current_status].tone">{{ ASSET_STATUS[asset.current_status].label }}</StatusBadge></td>
+              <td class="tabular text-right">
+                {{ formatRupiah(asset.purchase_price) }}
+                <p v-if="asset.purchase_date" class="text-xs text-jati-muda">{{ formatDate(asset.purchase_date) }}</p>
               </td>
-              <td class="px-6 py-4 text-gray-600">{{ asset.location }}</td>
-              <td class="px-6 py-4">
-                <span :class="[
-                  'px-2.5 py-1 text-xs font-medium rounded-full',
-                  asset.current_status === 'GOOD' ? 'bg-emerald-50 text-emerald-700' :
-                  asset.current_status === 'LOANED' ? 'bg-purple-50 text-purple-700' :
-                  (asset.current_status === 'REPAIR' || asset.current_status === 'NEEDS_REPAIR') ? 'bg-amber-50 text-amber-700' :
-                  'bg-red-50 text-red-700'
-                ]">
-                  {{ asset.current_status === 'NEEDS_REPAIR' ? 'NEEDS REPAIR' : asset.current_status }}
-                </span>
-              </td>
-              <td class="px-6 py-4 text-gray-600">{{ formatCurrency(asset.purchase_price) }}</td>
-              <td v-if="canManage" class="px-6 py-4 text-right">
-                <button @click="openEditDialog(asset)" class="text-blue-600 hover:text-blue-900 p-2 hover:bg-blue-50 rounded-lg transition-colors mr-2" title="Edit">
-                  <EditIcon class="w-4 h-4" />
-                </button>
-                <button
-                  @click="confirmDelete(asset)"
-                  :disabled="asset.current_status === 'LOANED' || deleteMutation.isPending.value"
-                  :title="asset.current_status === 'LOANED' ? 'Aset sedang dipinjam' : 'Hapus'"
-                  class="text-red-600 hover:text-red-900 p-2 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <TrashIcon class="w-4 h-4" />
-                </button>
+              <td v-if="canManage">
+                <div class="flex justify-end gap-1">
+                  <button type="button" class="rounded-md p-2 text-jati-muda hover:bg-kapur hover:text-sajadah" :aria-label="`Ubah ${asset.name}`" title="Ubah" @click="openForm(asset)">
+                    <Pencil class="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-md p-2 text-jati-muda hover:bg-bata-muda hover:text-bata disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-jati-muda"
+                    :disabled="asset.current_status === 'LOANED'"
+                    :aria-label="`Hapus ${asset.name}`"
+                    :title="asset.current_status === 'LOANED' ? 'Aset sedang dipinjam' : 'Hapus'"
+                    @click="confirmDelete(asset)"
+                  >
+                    <Trash2 class="size-4" />
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-    </div>
+    </DataPanel>
 
-    <!-- Add Asset Dialog -->
-    <div v-if="showAddDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
-      <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
-        <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 class="font-bold text-gray-900">{{ editingAsset ? 'Edit Aset' : 'Tambah Aset Baru' }}</h3>
-          <button @click="closeDialog" class="text-gray-400 hover:text-gray-600">
-            <XIcon class="w-5 h-5" />
-          </button>
-        </div>
-        <form @submit="submitAsset" class="p-6 space-y-4" novalidate>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Nama Aset</label>
-            <input v-model="name" type="text" class="block w-full rounded-lg border-gray-300 p-2.5 border" placeholder="Cth: Sound System Yamaha" />
-            <p v-if="errors.name" class="mt-1 text-xs text-red-600">{{ errors.name }}</p>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">SKU / Kode Aset</label>
-            <input v-model="sku" type="text" class="block w-full rounded-lg border-gray-300 p-2.5 border" placeholder="Cth: AST-001" />
-            <p v-if="errors.sku" class="mt-1 text-xs text-red-600">{{ errors.sku }}</p>
-          </div>
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Lokasi</label>
-              <input v-model="location" type="text" class="block w-full rounded-lg border-gray-300 p-2.5 border" placeholder="Gudang Utama" />
-              <p v-if="errors.location" class="mt-1 text-xs text-red-600">{{ errors.location }}</p>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-              <select v-model="currentStatus" :disabled="isOnLoan" class="block w-full rounded-lg border-gray-300 p-2.5 border disabled:bg-gray-50 disabled:text-gray-500">
-                <option value="GOOD">Baik (Tersedia)</option>
-                <option v-if="isOnLoan" value="LOANED">Dipinjam</option>
-                <option value="NEEDS_REPAIR">Perlu Perbaikan</option>
-                <option value="REPAIR">Sedang Diperbaiki</option>
-                <option value="BROKEN">Rusak Total</option>
-              </select>
-              <p v-if="isOnLoan" class="mt-1 text-xs text-gray-500">Status berubah otomatis saat aset dikembalikan.</p>
-            </div>
-          </div>
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Harga Beli</label>
-              <input v-model.number="purchasePrice" type="number" min="0" step="1" class="block w-full rounded-lg border-gray-300 p-2.5 border" />
-              <p v-if="errors.purchase_price" class="mt-1 text-xs text-red-600">{{ errors.purchase_price }}</p>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Beli</label>
-              <input v-model="purchaseDate" type="date" class="block w-full rounded-lg border-gray-300 p-2.5 border" />
-            </div>
-          </div>
-
-          <div class="pt-4 flex gap-3">
-            <button type="button" @click="closeDialog" class="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">Batal</button>
-            <button type="submit" :disabled="isSaving" class="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50">
-              {{ isSaving ? 'Menyimpan...' : 'Simpan Aset' }}
-            </button>
-          </div>
-        </form>
+    <FormDialog
+      v-model:open="showForm"
+      :title="editing ? 'Ubah aset' : 'Tambah aset'"
+      :submit-label="editing ? 'Simpan perubahan' : 'Tambah aset'"
+      :submitting="saveMutation.isPending.value"
+      @submit="submitForm"
+    >
+      <FormField label="Nama aset" for="asset-name" :error="errors.name" required>
+        <input id="asset-name" v-model="name" type="text" class="field-control" placeholder="Contoh: Sound system Yamaha" :aria-invalid="Boolean(errors.name)" />
+      </FormField>
+      <div class="grid grid-cols-2 gap-4">
+        <FormField label="Kode aset (SKU)" for="asset-sku" :error="errors.sku" required>
+          <input id="asset-sku" v-model="sku" type="text" class="field-control font-mono" placeholder="AST-001" :aria-invalid="Boolean(errors.sku)" />
+        </FormField>
+        <FormField label="Lokasi" for="asset-location" :error="errors.location">
+          <input id="asset-location" v-model="location" type="text" class="field-control" placeholder="Gudang" />
+        </FormField>
       </div>
-    </div>
+      <FormField
+        label="Kondisi"
+        for="asset-status"
+        :hint="isOnLoan ? 'Sedang dipinjam. Kondisi berubah otomatis saat aset dikembalikan.' : undefined"
+        required
+      >
+        <select id="asset-status" v-model="currentStatus" class="field-control" :disabled="isOnLoan">
+          <option v-if="isOnLoan" value="LOANED">{{ ASSET_STATUS.LOANED.label }}</option>
+          <option v-for="status in EDITABLE_STATUSES" :key="status" :value="status">{{ ASSET_STATUS[status].label }}</option>
+        </select>
+      </FormField>
+      <div class="grid grid-cols-2 gap-4">
+        <FormField label="Harga beli (Rp)" for="asset-price" :error="errors.purchase_price">
+          <input id="asset-price" v-model.number="purchasePrice" type="number" min="0" step="1" class="field-control tabular" />
+        </FormField>
+        <FormField label="Tanggal beli" for="asset-date">
+          <input id="asset-date" v-model="purchaseDate" type="date" class="field-control" />
+        </FormField>
+      </div>
+    </FormDialog>
   </div>
 </template>

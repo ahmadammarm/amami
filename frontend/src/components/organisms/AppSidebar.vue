@@ -17,6 +17,7 @@ import {
 } from 'lucide-vue-next';
 import { useAuthStore } from '../../stores/auth';
 import { Permission } from '../../lib/permissions';
+import { roleLabel } from '../../lib/roles';
 import { feedback } from '../../composables/useFeedback';
 import BrandMark from '../molecules/BrandMark.vue';
 import {
@@ -80,7 +81,7 @@ const visibleGroups = computed(() => {
 
 const displayName = computed(() => authStore.user?.full_name || authStore.user?.username || '');
 const initial = computed(() => displayName.value.charAt(0).toUpperCase() || 'A');
-const roleLabel = computed(() => authStore.user?.role_name.replace('_', ' ') ?? '');
+const userRoleLabel = computed(() => (authStore.user ? roleLabel(authStore.user.role_name) : ''));
 
 const isActive = (path: string) => route.path === path;
 
@@ -149,7 +150,7 @@ const signOut = async () => {
             </span>
             <span class="min-w-0 flex-1">
               <span class="block truncate text-sm font-semibold">{{ displayName }}</span>
-              <span class="block truncate text-[11px] uppercase tracking-wider text-white/55">{{ roleLabel }}</span>
+              <span class="block truncate text-[11px] uppercase tracking-wider text-white/55">{{ userRoleLabel }}</span>
             </span>
             <ChevronsUpDown class="size-4 text-white/50" />
           </button>

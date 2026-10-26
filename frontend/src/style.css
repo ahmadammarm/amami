@@ -26,6 +26,7 @@
   --color-sajadah-muda: #e6efeb;
   --color-kuningan: #b08a3e;
   --color-kuningan-muda: #f4ecdb;
+  --color-kuningan-tua: #7a5d22;
   --color-bata: #a8412f;
   --color-bata-muda: #f6e4e0;
 
@@ -124,6 +125,27 @@
       shadow-sm transition-colors placeholder:text-jati-muda/60
       hover:border-jati-muda/40 focus:border-sajadah focus:outline-none focus:ring-2 focus:ring-sajadah/15
       disabled:cursor-not-allowed disabled:bg-kapur disabled:text-jati-muda;
+  }
+
+  /* Data tables: quiet header, shaf hairlines between rows. */
+  .tabel {
+    @apply w-full text-left text-sm;
+  }
+
+  .tabel thead th {
+    @apply border-b border-batu bg-kapur/70 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-jati-muda;
+  }
+
+  .tabel tbody td {
+    @apply border-b border-batu px-5 py-3.5 align-middle text-jati;
+  }
+
+  .tabel tbody tr:last-child td {
+    @apply border-b-0;
+  }
+
+  .tabel tbody tr {
+    @apply transition-colors hover:bg-kapur/60;
   }
 
   /* Eight-point girih star (two overlapping squares), tiled faintly on dark surfaces. */

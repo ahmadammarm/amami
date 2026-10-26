@@ -2,28 +2,34 @@
 import { computed } from 'vue';
 import VueApexCharts from 'vue3-apexcharts';
 import type { ApexOptions } from 'apexcharts';
-import { useAuthStore } from '@/stores/auth';
+import { useQuery } from '@tanstack/vue-query';
 import {
   Wallet,
   Users,
-  Package,
-  BookOpen,
-  HeartHandshake,
-  TrendingUp,
-  AlertTriangle,
-  ArrowUpRight,
-  ArrowDownRight,
-  CalendarDays,
-  ShieldCheck,
+  HandCoins,
+  CalendarRange,
+  PackageSearch,
+  TriangleAlert,
 } from 'lucide-vue-next';
-import { useQuery } from '@tanstack/vue-query';
 import { dashboardService } from '@/api/services/dashboard';
 import { queryKeys } from '@/api/queryKeys';
-import type { MonthlyFinancialPoint, MonthlyJamaahPoint } from '@/types/dashboard';
+import { useAuthStore } from '@/stores/auth';
+import { Permission } from '@/lib/permissions';
+import { formatNumber, formatRupiah } from '@/lib/format';
+import StatCard from '@/components/molecules/StatCard.vue';
+import DataPanel from '@/components/molecules/DataPanel.vue';
+
+// Chart colours mirror the design tokens in style.css.
+const COLOR = {
+  sajadah: '#2d6a57',
+  kuningan: '#b08a3e',
+  bata: '#a8412f',
+  jatiMuda: '#6b6158',
+  batu: '#e4e7e1',
+  sajadahMuda: '#e6efeb',
+} as const;
 
 const authStore = useAuthStore();
-const role = computed(() => authStore.userRole);
-const userName = computed(() => authStore.user?.full_name || authStore.user?.username || 'Admin');
 
 const { data: metrics, isLoading } = useQuery({
   queryKey: queryKeys.dashboard.metrics,
@@ -31,379 +37,275 @@ const { data: metrics, isLoading } = useQuery({
   refetchInterval: 60000,
 });
 
-const formatCurrency = (amount: number = 0) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount);
-
-const formatNumber = (n: number = 0) => new Intl.NumberFormat('id-ID').format(n);
+const firstName = computed(() => (authStore.user?.full_name || authStore.user?.username || '').split(' ')[0]);
 
 const greeting = computed(() => {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Selamat Pagi';
-  if (hour < 15) return 'Selamat Siang';
-  if (hour < 18) return 'Selamat Sore';
-  return 'Selamat Malam';
+  if (hour < 11) return 'Selamat pagi';
+  if (hour < 15) return 'Selamat siang';
+  if (hour < 18) return 'Selamat sore';
+  return 'Selamat malam';
 });
 
-const now = new Date();
-const dateStr = now.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+const today = new Date();
+const gregorianDate = today.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const hijriDate = today.toLocaleDateString('id-ID-u-ca-islamic-umalqura', { day: 'numeric', month: 'long', year: 'numeric' });
 
-const isSuperAdmin = computed(() => role.value === 'SUPER_ADMIN');
-const isBendahara = computed(() => role.value === 'BENDAHARA');
-const isTakmir = computed(() => role.value === 'TAKMIR');
-const isSekretaris = computed(() => role.value === 'SEKRETARIS');
+const show = computed(() => ({
+  finance: authStore.can(Permission.LedgerRead),
+  zakat: authStore.can(Permission.ZakatRead),
+  jamaah: authStore.can(Permission.JamaahManage),
+  agenda: authStore.can(Permission.AgendaRead),
+  inventory: authStore.can(Permission.InventoryRead),
+  qurban: authStore.can(Permission.QurbanRead),
+}));
 
-// ── Chart: 6-Month Finance Trend (Area) ──────────────────────────────────────
-const financeAreaSeries = computed(() => {
-  const data = metrics.value?.analytics?.monthly_finance ?? [];
+const analytics = computed(() => metrics.value?.analytics);
+const brokenAssets = computed(() => metrics.value?.logistics?.broken_assets ?? 0);
+
+const axisLabel = { style: { colors: COLOR.jatiMuda, fontSize: '12px' } };
+const baseChart = { toolbar: { show: false }, fontFamily: 'inherit', animations: { enabled: true, speed: 500 } };
+
+// Finance: income vs expense over six months
+const financeSeries = computed(() => {
+  const points = analytics.value?.monthly_finance ?? [];
   return [
-    { name: 'Pemasukan', data: data.map((d: MonthlyFinancialPoint) => d.income) },
-    { name: 'Pengeluaran', data: data.map((d: MonthlyFinancialPoint) => d.expense) },
+    { name: 'Pemasukan', data: points.map(p => p.income) },
+    { name: 'Pengeluaran', data: points.map(p => p.expense) },
   ];
 });
-const financeAreaOptions = computed<ApexOptions>(() => ({
-  chart: {
-    type: 'area',
-    toolbar: { show: false },
-    fontFamily: 'inherit',
-    sparkline: { enabled: false },
-    animations: { enabled: true, speed: 800 },
-  },
-  colors: ['#10b981', '#f43f5e'],
-  fill: {
-    type: 'gradient',
-    gradient: { shadeIntensity: 1, opacityFrom: 0.45, opacityTo: 0.05 },
-  },
+const financeOptions = computed<ApexOptions>(() => ({
+  chart: { ...baseChart, type: 'area' },
+  colors: [COLOR.sajadah, COLOR.bata],
+  fill: { type: 'gradient', gradient: { opacityFrom: 0.28, opacityTo: 0.02 } },
   stroke: { curve: 'smooth', width: 2 },
   dataLabels: { enabled: false },
   xaxis: {
-    categories: (metrics.value?.analytics?.monthly_finance ?? []).map((d: MonthlyFinancialPoint) => d.month),
-    labels: { style: { colors: '#9ca3af', fontSize: '12px' } },
+    categories: (analytics.value?.monthly_finance ?? []).map(p => p.month),
+    labels: axisLabel,
     axisBorder: { show: false },
     axisTicks: { show: false },
   },
-  yaxis: {
-    labels: {
-      formatter: (v: number) => `Rp ${formatNumber(v)}`,
-      style: { colors: '#9ca3af', fontSize: '11px' },
-    },
-    stepSize: 10000000,
-  },
-  grid: { borderColor: '#f3f4f6', strokeDashArray: 4, padding: { left: 0, right: 0 } },
-  tooltip: {
-    y: { formatter: (v: number) => formatCurrency(v) },
-  },
-  legend: { position: 'top', horizontalAlign: 'right', fontSize: '13px' },
+  yaxis: { labels: { ...axisLabel, formatter: (v: number) => formatRupiah(v) } },
+  grid: { borderColor: COLOR.batu, strokeDashArray: 4 },
+  tooltip: { y: { formatter: (v: number) => formatRupiah(v) } },
+  legend: { position: 'top', horizontalAlign: 'left', fontSize: '13px', labels: { colors: COLOR.jatiMuda } },
 }));
 
-// ── Chart: Zakat Radial Bar ───────────────────────────────────────────────────
-const zakatRadialSeries = computed(() => {
-  const donated = metrics.value?.analytics?.zakat_breakdown?.total_donated ?? 0;
-  const distributed = metrics.value?.analytics?.zakat_breakdown?.total_distributed ?? 0;
-  if (donated === 0) return [0];
-  return [Math.min(Math.round((distributed / donated) * 100), 100)];
+// Zakat: share of collected zakat already distributed
+const zakatDonated = computed(() => analytics.value?.zakat_breakdown?.total_donated ?? 0);
+const zakatDistributed = computed(() => analytics.value?.zakat_breakdown?.total_distributed ?? 0);
+const zakatSeries = computed(() => {
+  if (zakatDonated.value === 0) return [0];
+  return [Math.min(Math.round((zakatDistributed.value / zakatDonated.value) * 100), 100)];
 });
-const zakatRadialOptions = computed<ApexOptions>(() => ({
-  chart: { type: 'radialBar', fontFamily: 'inherit' },
-  colors: ['#3b82f6'],
+const zakatOptions = computed<ApexOptions>(() => ({
+  chart: { ...baseChart, type: 'radialBar' },
+  colors: [COLOR.kuningan],
   plotOptions: {
     radialBar: {
-      hollow: { size: '60%' },
+      hollow: { size: '62%' },
+      track: { background: COLOR.sajadahMuda },
       dataLabels: {
-        name: { show: true, color: '#6b7280', fontSize: '13px', offsetY: -8 },
-        value: { show: true, color: '#111827', fontSize: '28px', fontWeight: 700, formatter: (v: number) => `${v}%` },
+        name: { show: true, color: COLOR.jatiMuda, fontSize: '12px', offsetY: -6 },
+        value: { show: true, color: '#2b211b', fontSize: '26px', fontWeight: 600, formatter: (v: number) => `${v}%` },
       },
-      track: { background: '#e5e7eb' },
     },
   },
   labels: ['Tersalurkan'],
 }));
 
-// ── Chart: Qurban Donut (Sapi, Kambing, Domba) ───────────────────────────────
-const qurbanDonutSeries = computed(() => [
-  metrics.value?.analytics?.qurban_breakdown?.sapi ?? 0,
-  metrics.value?.analytics?.qurban_breakdown?.kambing ?? 0,
-  metrics.value?.analytics?.qurban_breakdown?.domba ?? 0,
-]);
+// Qurban: animals per type
 const QURBAN_LABELS = ['Sapi', 'Kambing', 'Domba'];
-const qurbanDonutOptions = computed<ApexOptions>(() => ({
-  chart: { type: 'donut', fontFamily: 'inherit', animations: { enabled: true } },
+const qurbanSeries = computed(() => [
+  analytics.value?.qurban_breakdown?.sapi ?? 0,
+  analytics.value?.qurban_breakdown?.kambing ?? 0,
+  analytics.value?.qurban_breakdown?.domba ?? 0,
+]);
+const qurbanOptions = computed<ApexOptions>(() => ({
+  chart: { ...baseChart, type: 'donut' },
   labels: QURBAN_LABELS,
-  colors: ['#f97316', '#f59e0b', '#84cc16'],
-  dataLabels: {
-    enabled: true,
-    formatter: (_value, opts?: { seriesIndex: number }) => {
-      const i = opts?.seriesIndex ?? 0;
-      return `${QURBAN_LABELS[i]}: ${qurbanDonutSeries.value[i] ?? 0}`;
+  colors: [COLOR.sajadah, COLOR.kuningan, COLOR.jatiMuda],
+  dataLabels: { enabled: false },
+  legend: { position: 'bottom', fontSize: '13px', labels: { colors: COLOR.jatiMuda } },
+  stroke: { width: 2, colors: ['#ffffff'] },
+  plotOptions: {
+    pie: {
+      donut: {
+        size: '64%',
+        labels: {
+          show: true,
+          total: {
+            show: true,
+            label: 'Total hewan',
+            color: COLOR.jatiMuda,
+            formatter: () => formatNumber(qurbanSeries.value.reduce((a, b) => a + b, 0)),
+          },
+        },
+      },
     },
   },
-  legend: { position: 'bottom', fontSize: '13px' },
-  stroke: { width: 2, colors: ['#ffffff'] },
-  plotOptions: { pie: { donut: { size: '62%', labels: { show: true, total: { show: true, label: 'Total Hewan', color: '#6b7280', formatter: () => String(qurbanDonutSeries.value.reduce((a, b) => a + b, 0)) } } } } },
   tooltip: { y: { formatter: (v: number) => `${v} ekor` } },
 }));
 
-// ── Chart: Asset Status Bar ───────────────────────────────────────────────────
-const assetBarSeries = computed(() => [{
+// Inventory: assets per condition
+const assetSeries = computed(() => [{
   name: 'Aset',
   data: [
-    metrics.value?.analytics?.asset_breakdown?.good ?? 0,
-    metrics.value?.analytics?.asset_breakdown?.loaned ?? 0,
-    metrics.value?.analytics?.asset_breakdown?.needs_repair ?? 0,
-    metrics.value?.analytics?.asset_breakdown?.broken ?? 0,
+    analytics.value?.asset_breakdown?.good ?? 0,
+    analytics.value?.asset_breakdown?.loaned ?? 0,
+    analytics.value?.asset_breakdown?.needs_repair ?? 0,
+    analytics.value?.asset_breakdown?.broken ?? 0,
   ],
 }]);
-const assetBarOptions = computed<ApexOptions>(() => ({
-  chart: { type: 'bar', toolbar: { show: false }, fontFamily: 'inherit', animations: { enabled: true } },
-  colors: ['#10b981', '#f59e0b', '#f97316', '#f43f5e'],
-  plotOptions: {
-    bar: {
-      borderRadius: 6,
-      columnWidth: '45%',
-      distributed: true,
-    },
-  },
+const assetOptions = computed<ApexOptions>(() => ({
+  chart: { ...baseChart, type: 'bar' },
+  colors: [COLOR.sajadah, COLOR.kuningan, COLOR.jatiMuda, COLOR.bata],
+  plotOptions: { bar: { borderRadius: 6, columnWidth: '48%', distributed: true } },
   dataLabels: { enabled: false },
   legend: { show: false },
   xaxis: {
-    categories: ['Baik', 'Dipinjam', 'Perlu Perbaikan', 'Rusak'],
-    labels: { style: { colors: '#9ca3af', fontSize: '12px' } },
+    categories: ['Baik', 'Dipinjam', 'Perlu perbaikan', 'Rusak'],
+    labels: axisLabel,
     axisBorder: { show: false },
     axisTicks: { show: false },
   },
-  yaxis: {
-    labels: { style: { colors: '#9ca3af', fontSize: '12px' } },
-    tickAmount: 4,
-  },
-  grid: { borderColor: '#f3f4f6', strokeDashArray: 4 },
+  yaxis: { labels: axisLabel, tickAmount: 4 },
+  grid: { borderColor: COLOR.batu, strokeDashArray: 4 },
   tooltip: { y: { formatter: (v: number) => `${v} unit` } },
 }));
 
-// ── Chart: Jamaah Monthly Growth Bar ─────────────────────────────────────────
-const jamaahBarSeries = computed(() => [{
-  name: 'Jamaah Baru',
-  data: (metrics.value?.analytics?.jamaah_growth ?? []).map((d: MonthlyJamaahPoint) => d.new_members),
+// Jamaah: new registrations per month
+const jamaahSeries = computed(() => [{
+  name: 'Jamaah baru',
+  data: (analytics.value?.jamaah_growth ?? []).map(p => p.new_members),
 }]);
-const jamaahBarOptions = computed<ApexOptions>(() => ({
-  chart: { type: 'bar', toolbar: { show: false }, fontFamily: 'inherit' },
-  colors: ['#6366f1'],
-  plotOptions: {
-    bar: { borderRadius: 6, columnWidth: '40%' },
-  },
+const jamaahOptions = computed<ApexOptions>(() => ({
+  chart: { ...baseChart, type: 'bar' },
+  colors: [COLOR.sajadah],
+  plotOptions: { bar: { borderRadius: 6, columnWidth: '42%' } },
   dataLabels: { enabled: false },
   xaxis: {
-    categories: (metrics.value?.analytics?.jamaah_growth ?? []).map((d: MonthlyJamaahPoint) => d.month),
-    labels: { style: { colors: '#9ca3af', fontSize: '12px' } },
+    categories: (analytics.value?.jamaah_growth ?? []).map(p => p.month),
+    labels: axisLabel,
     axisBorder: { show: false },
     axisTicks: { show: false },
   },
-  yaxis: {
-    labels: { style: { colors: '#9ca3af', fontSize: '12px' } },
-    tickAmount: 4,
-  },
-  grid: { borderColor: '#f3f4f6', strokeDashArray: 4 },
+  yaxis: { labels: axisLabel, tickAmount: 4 },
+  grid: { borderColor: COLOR.batu, strokeDashArray: 4 },
   tooltip: { y: { formatter: (v: number) => `${v} orang` } },
 }));
 </script>
 
 <template>
-  <div class="space-y-8 pb-12 animate-in fade-in duration-500">
+  <div class="space-y-8">
+    <header class="border-b border-batu pb-6">
+      <p class="text-sm text-jati-muda">
+        {{ gregorianDate }} <span class="text-kuningan">·</span> {{ hijriDate }}
+      </p>
+      <h1 class="mt-2 font-display text-3xl font-semibold tracking-wide text-jati sm:text-4xl">
+        {{ greeting }}, {{ firstName }}
+      </h1>
+      <p class="mt-1.5 text-sm text-jati-muda">Ringkasan kegiatan dan catatan masjid hari ini.</p>
+    </header>
 
-    <!-- ── Hero Header ─────────────────────────────────────────────────────── -->
-    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-700 via-teal-700 to-teal-900 p-8 text-white shadow-xl">
-      <!-- Decorative circles -->
-      <div class="absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/5"></div>
-      <div class="absolute -bottom-10 -right-4 h-40 w-40 rounded-full bg-white/5"></div>
-      <div class="absolute top-8 right-40 h-20 w-20 rounded-full bg-white/5"></div>
-
-      <div class="relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p class="text-sm font-medium text-emerald-200">{{ dateStr }}</p>
-          <h1 class="mt-1 text-3xl font-bold tracking-tight">{{ greeting }}, {{ userName }}!</h1>
-          <p class="mt-2 max-w-lg text-emerald-100">
-            <span v-if="isSuperAdmin">Sistem kontrol utama Amami — seluruh operasional terpantau secara real-time.</span>
-            <span v-else-if="isBendahara">Pantau keuangan dan distribusi zakat dengan akurat dan transparan.</span>
-            <span v-else-if="isTakmir">Kelola logistik, inventaris, dan kegiatan masjid di satu tempat.</span>
-            <span v-else-if="isSekretaris">Pusat administrasi jamaah, agenda, dan dokumen masjid.</span>
-          </p>
-        </div>
-        <div class="flex flex-col items-start gap-2 md:items-end">
-          <div class="inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-sm font-medium text-white backdrop-blur-sm border border-white/20">
-            <ShieldCheck class="mr-2 h-4 w-4" />
-            {{ role }}
-          </div>
-        </div>
-      </div>
+    <div v-if="isLoading" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div v-for="i in 6" :key="i" class="h-[118px] animate-pulse rounded-xl bg-batu/60" />
     </div>
 
-    <!-- Skeleton Loader -->
-    <div v-if="isLoading" class="grid gap-6 md:grid-cols-4">
-      <div v-for="i in 4" :key="i" class="h-32 animate-pulse rounded-2xl bg-gray-100"></div>
-    </div>
-
-    <template v-else>
-
-      <!-- ── KPI Summary Strip ──────────────────────────────────────────────── -->
-      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <!-- Saldo Kas -->
-        <div v-if="isSuperAdmin || isBendahara" class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div class="flex items-center justify-between">
-            <p class="text-sm font-medium text-gray-500">Total Saldo Kas</p>
-            <div class="rounded-xl bg-emerald-50 p-2 text-emerald-600"><Wallet class="h-5 w-5" /></div>
-          </div>
-          <p class="mt-4 text-2xl font-bold text-gray-900">{{ formatCurrency(metrics?.finance?.total_balance) }}</p>
-          <p class="mt-1 flex items-center gap-1 text-xs font-medium text-emerald-600">
-            <ArrowUpRight class="h-3 w-3" /> {{ formatCurrency(metrics?.finance?.monthly_inflow) }} bulan ini
-          </p>
-        </div>
-
-        <!-- Total Jamaah -->
-        <div v-if="isSuperAdmin || isSekretaris || isTakmir" class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div class="flex items-center justify-between">
-            <p class="text-sm font-medium text-gray-500">Total Jamaah</p>
-            <div class="rounded-xl bg-blue-50 p-2 text-blue-600"><Users class="h-5 w-5" /></div>
-          </div>
-          <p class="mt-4 text-2xl font-bold text-gray-900">{{ formatNumber(metrics?.jamaah?.total) }}</p>
-          <p class="mt-1 flex items-center gap-1 text-xs font-medium text-blue-600">
-            <ArrowUpRight class="h-3 w-3" /> +{{ metrics?.jamaah?.newly_registered ?? 0 }} bulan ini
-          </p>
-        </div>
-
-        <!-- Aset Dipinjam -->
-        <div v-if="isSuperAdmin || isTakmir" class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div class="flex items-center justify-between">
-            <p class="text-sm font-medium text-gray-500">Aset Dipinjam</p>
-            <div class="rounded-xl bg-amber-50 p-2 text-amber-600"><BookOpen class="h-5 w-5" /></div>
-          </div>
-          <p class="mt-4 text-2xl font-bold text-gray-900">{{ metrics?.logistics?.active_loans ?? 0 }}</p>
-          <p class="mt-1 text-xs text-gray-400">peminjaman aktif saat ini</p>
-        </div>
-
-        <!-- Agenda Mendatang -->
-        <div v-if="isSuperAdmin || isTakmir || isSekretaris" class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div class="flex items-center justify-between">
-            <p class="text-sm font-medium text-gray-500">Agenda Mendatang</p>
-            <div class="rounded-xl bg-violet-50 p-2 text-violet-600"><CalendarDays class="h-5 w-5" /></div>
-          </div>
-          <p class="mt-4 text-2xl font-bold text-gray-900">{{ metrics?.logistics?.upcoming_agendas ?? 0 }}</p>
-          <p class="mt-1 text-xs text-gray-400">kegiatan akan datang</p>
-        </div>
-
-        <!-- Zakat Terkumpul -->
-        <div v-if="isSuperAdmin || isBendahara" class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div class="flex items-center justify-between">
-            <p class="text-sm font-medium text-gray-500">Zakat Terkumpul</p>
-            <div class="rounded-xl bg-teal-50 p-2 text-teal-600"><HeartHandshake class="h-5 w-5" /></div>
-          </div>
-          <p class="mt-4 text-2xl font-bold text-gray-900">{{ formatCurrency(metrics?.zakat?.collected) }}</p>
-          <p class="mt-1 text-xs text-gray-400">{{ metrics?.zakat?.mustahik ?? 0 }} mustahik terdaftar</p>
-        </div>
-
-        <!-- Aset Bermasalah -->
-        <div v-if="isSuperAdmin || isTakmir" class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div class="flex items-center justify-between">
-            <p class="text-sm font-medium text-gray-500">Aset Bermasalah</p>
-            <div class="rounded-xl bg-red-50 p-2 text-red-500"><AlertTriangle class="h-5 w-5" /></div>
-          </div>
-          <p class="mt-4 text-2xl font-bold text-red-600">{{ metrics?.logistics?.broken_assets ?? 0 }}</p>
-          <p class="mt-1 flex items-center gap-1 text-xs font-medium text-red-400">
-            <ArrowDownRight class="h-3 w-3" /> perlu perbaikan / rusak
-          </p>
-        </div>
+    <template v-else-if="metrics">
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <StatCard
+          v-if="show.finance"
+          label="Saldo kas"
+          :value="formatRupiah(metrics.finance.total_balance)"
+          :hint="`${formatRupiah(metrics.finance.monthly_inflow)} masuk bulan ini`"
+          :icon="Wallet"
+        />
+        <StatCard
+          v-if="show.zakat"
+          label="Zakat terkumpul"
+          :value="formatRupiah(metrics.zakat.collected)"
+          :hint="`${formatNumber(metrics.zakat.mustahik)} mustahik terdaftar`"
+          :icon="HandCoins"
+        />
+        <StatCard
+          v-if="show.jamaah"
+          label="Jamaah"
+          :value="formatNumber(metrics.jamaah.total)"
+          :hint="`${formatNumber(metrics.jamaah.newly_registered)} baru bulan ini`"
+          :icon="Users"
+        />
+        <StatCard
+          v-if="show.agenda"
+          label="Agenda terjadwal"
+          :value="formatNumber(metrics.logistics.upcoming_agendas)"
+          hint="kegiatan belum berlangsung"
+          :icon="CalendarRange"
+        />
+        <StatCard
+          v-if="show.inventory"
+          label="Aset dipinjam"
+          :value="formatNumber(metrics.logistics.active_loans)"
+          hint="belum dikembalikan"
+          :icon="PackageSearch"
+        />
+        <StatCard
+          v-if="show.inventory"
+          label="Aset bermasalah"
+          :value="formatNumber(brokenAssets)"
+          hint="perlu perbaikan atau rusak"
+          :icon="TriangleAlert"
+          :tone="brokenAssets > 0 ? 'alert' : 'default'"
+        />
       </div>
 
-      <!-- ── Finance Section: SUPER_ADMIN & BENDAHARA ──────────────────────── -->
-      <div v-if="isSuperAdmin || isBendahara" class="space-y-4">
-        <div class="flex items-center gap-2">
-          <TrendingUp class="h-5 w-5 text-emerald-600" />
-          <h2 class="text-lg font-bold text-gray-900">Tren Keuangan 6 Bulan Terakhir</h2>
-        </div>
-        <div class="grid gap-6 lg:grid-cols-3">
-          <!-- Area Chart (full width on its row) -->
-          <div class="lg:col-span-2 rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
-            <h3 class="text-sm font-semibold text-gray-500 mb-4">Pemasukan vs Pengeluaran</h3>
-            <VueApexCharts type="area" height="260" :options="financeAreaOptions" :series="financeAreaSeries" />
+      <div v-if="show.finance || show.zakat" class="grid gap-6 lg:grid-cols-3">
+        <DataPanel
+          v-if="show.finance"
+          title="Arus kas enam bulan terakhir"
+          description="Pemasukan dan pengeluaran semua kas."
+          class="lg:col-span-2"
+        >
+          <div class="px-3 pt-2 pb-3">
+            <VueApexCharts type="area" height="280" :options="financeOptions" :series="financeSeries" />
           </div>
-          <!-- Zakat Radial Bar -->
-          <div class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100 flex flex-col">
-            <h3 class="text-sm font-semibold text-gray-500 mb-2">Distribusi Zakat</h3>
-            <div class="flex-1 flex flex-col items-center justify-center">
-              <VueApexCharts type="radialBar" height="220" :options="zakatRadialOptions" :series="zakatRadialSeries" />
-              <div class="mt-2 space-y-1 w-full text-sm text-gray-600">
-                <div class="flex justify-between px-4">
-                  <span>Terkumpul</span>
-                  <span class="font-semibold text-gray-900">{{ formatCurrency(metrics?.analytics?.zakat_breakdown?.total_donated) }}</span>
-                </div>
-                <div class="flex justify-between px-4">
-                  <span>Tersalurkan</span>
-                  <span class="font-semibold text-teal-600">{{ formatCurrency(metrics?.analytics?.zakat_breakdown?.total_distributed) }}</span>
-                </div>
-              </div>
+        </DataPanel>
+        <DataPanel v-if="show.zakat" title="Penyaluran zakat" description="Porsi zakat terkumpul yang sudah disalurkan.">
+          <div class="px-3 pt-2">
+            <VueApexCharts type="radialBar" height="230" :options="zakatOptions" :series="zakatSeries" />
+          </div>
+          <dl class="shaf mx-5 mb-5 text-sm">
+            <div class="flex justify-between py-2">
+              <dt class="text-jati-muda">Terkumpul</dt>
+              <dd class="tabular font-semibold">{{ formatRupiah(zakatDonated) }}</dd>
             </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Logistics Section: SUPER_ADMIN & TAKMIR ───────────────────────── -->
-      <div v-if="isSuperAdmin || isTakmir" class="space-y-4">
-        <div class="flex items-center gap-2">
-          <Package class="h-5 w-5 text-orange-500" />
-          <h2 class="text-lg font-bold text-gray-900">Agenda, Inventaris & Qurban</h2>
-        </div>
-        <div class="grid gap-6 md:grid-cols-2">
-          <!-- Qurban Donut -->
-          <div class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
-            <h3 class="text-sm font-semibold text-gray-500 mb-4">Komposisi Hewan Qurban</h3>
-            <VueApexCharts type="donut" height="280" :options="qurbanDonutOptions" :series="qurbanDonutSeries" />
-          </div>
-          <!-- Asset Status Bar -->
-          <div class="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
-            <h3 class="text-sm font-semibold text-gray-500 mb-4">Status Aset Inventaris</h3>
-            <VueApexCharts type="bar" height="280" :options="assetBarOptions" :series="assetBarSeries" />
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Jamaah Section: SUPER_ADMIN & SEKRETARIS ──────────────────────── -->
-      <div v-if="isSuperAdmin || isSekretaris" class="space-y-4">
-        <div class="flex items-center gap-2">
-          <Users class="h-5 w-5 text-indigo-500" />
-          <h2 class="text-lg font-bold text-gray-900">Pertumbuhan Jamaah</h2>
-        </div>
-        <div class="grid gap-6 lg:grid-cols-3">
-          <!-- Jamaah Growth Bar -->
-          <div class="lg:col-span-2 rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
-            <h3 class="text-sm font-semibold text-gray-500 mb-4">Jamaah Baru per Bulan (6 Bulan Terakhir)</h3>
-            <VueApexCharts type="bar" height="240" :options="jamaahBarOptions" :series="jamaahBarSeries" />
-          </div>
-          <!-- Stats sidebar -->
-          <div class="rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 p-6 text-white shadow-sm flex flex-col justify-between">
-            <div>
-              <p class="text-sm font-medium text-indigo-200">Total Jamaah</p>
-              <p class="mt-2 text-5xl font-bold">{{ formatNumber(metrics?.jamaah?.total) }}</p>
-              <p class="mt-2 text-sm text-indigo-200">anggota komunitas terdaftar</p>
+            <div class="flex justify-between py-2">
+              <dt class="text-jati-muda">Tersalurkan</dt>
+              <dd class="tabular font-semibold text-sajadah">{{ formatRupiah(zakatDistributed) }}</dd>
             </div>
-            <div class="mt-6 space-y-3">
-              <div class="flex items-center justify-between rounded-xl bg-white/10 px-4 py-2.5">
-                <span class="text-sm text-indigo-100">Mustahik</span>
-                <span class="font-bold">{{ metrics?.zakat?.mustahik ?? 0 }} KK</span>
-              </div>
-              <div class="flex items-center justify-between rounded-xl bg-white/10 px-4 py-2.5">
-                <span class="text-sm text-indigo-100">Baru bulan ini</span>
-                <span class="font-bold">+{{ metrics?.jamaah?.newly_registered ?? 0 }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+          </dl>
+        </DataPanel>
       </div>
 
+      <div v-if="show.qurban || show.inventory" class="grid gap-6 md:grid-cols-2">
+        <DataPanel v-if="show.qurban" title="Hewan qurban" description="Jumlah hewan menurut jenisnya.">
+          <div class="px-3 py-3">
+            <VueApexCharts type="donut" height="280" :options="qurbanOptions" :series="qurbanSeries" />
+          </div>
+        </DataPanel>
+        <DataPanel v-if="show.inventory" title="Kondisi aset" description="Sebaran aset menurut kondisinya.">
+          <div class="px-3 py-3">
+            <VueApexCharts type="bar" height="280" :options="assetOptions" :series="assetSeries" />
+          </div>
+        </DataPanel>
+      </div>
+
+      <DataPanel v-if="show.jamaah" title="Pertumbuhan jamaah" description="Pendaftaran jamaah baru per bulan.">
+        <div class="px-3 py-3">
+          <VueApexCharts type="bar" height="240" :options="jamaahOptions" :series="jamaahSeries" />
+        </div>
+      </DataPanel>
     </template>
   </div>
 </template>
-
-<style scoped>
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.animate-in { animation: fadeIn 0.5s ease-out forwards; }
-</style>

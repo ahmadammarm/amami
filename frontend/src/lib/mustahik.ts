@@ -1,4 +1,5 @@
 import type { HouseStatus } from '../types/jamaah';
+import type { BadgeTone } from '../types/ui';
 
 export type ScoreLevel = 'high' | 'medium' | 'low';
 
@@ -9,11 +10,13 @@ export function scoreLevel(score: number): ScoreLevel {
   return 'low';
 }
 
-export const scoreBadgeClass: Record<ScoreLevel, string> = {
-  high: 'bg-red-100 text-red-700',
-  medium: 'bg-amber-100 text-amber-700',
-  low: 'bg-gray-100 text-gray-600',
+const scoreTones: Record<ScoreLevel, BadgeTone> = {
+  high: 'bata',
+  medium: 'kuningan',
+  low: 'netral',
 };
+
+export const scoreTone = (score: number): BadgeTone => scoreTones[scoreLevel(score)];
 
 export const houseStatusLabels: Record<HouseStatus, string> = {
   OWNED: 'Milik sendiri',
