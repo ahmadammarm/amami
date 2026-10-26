@@ -158,7 +158,7 @@ const submitForm = handleSubmit((values) => {
         :title="isFiltered ? 'Tidak ada jamaah yang cocok' : 'Belum ada jamaah terdaftar'"
         :description="isFiltered ? 'Ubah kata kunci atau matikan filter mustahik.' : 'Daftarkan jamaah agar bisa dicatat sebagai muzakki, mustahik, atau shohibul qurban.'"
       />
-      <div v-else class="overflow-x-auto">
+      <div v-else class="scrollbar-tipis overflow-x-auto overscroll-x-contain">
         <table class="tabel min-w-[820px]">
           <thead>
             <tr>
@@ -186,7 +186,7 @@ const submitForm = handleSubmit((values) => {
                   <button
                     v-if="canSurvey"
                     type="button"
-                    class="rounded-md p-2 text-jati-muda hover:bg-kapur hover:text-sajadah"
+                    class="tombol-ikon"
                     :aria-label="`Survei mustahik ${j.full_name}`"
                     title="Survei mustahik"
                     @click="surveyTarget = j"
@@ -196,7 +196,7 @@ const submitForm = handleSubmit((values) => {
                   <button
                     v-if="canManage"
                     type="button"
-                    class="rounded-md p-2 text-jati-muda hover:bg-kapur hover:text-sajadah"
+                    class="tombol-ikon"
                     :aria-label="`Ubah data ${j.full_name}`"
                     title="Ubah data"
                     @click="openEdit(j)"

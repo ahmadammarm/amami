@@ -82,10 +82,10 @@ const copyAccountNumber = async () => {
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col bg-kapur text-jati">
+  <div class="flex min-h-dvh flex-col bg-kapur text-jati">
     <!-- Navigation -->
     <header class="sticky top-0 z-40 border-b border-batu bg-kapur/85 backdrop-blur">
-      <div class="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+      <div class="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
         <RouterLink :to="{ name: 'Landing' }" class="rounded-md">
           <BrandMark />
         </RouterLink>
@@ -96,11 +96,12 @@ const copyAccountNumber = async () => {
         </nav>
         <button
           type="button"
-          class="inline-flex items-center gap-2 rounded-lg bg-sajadah px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-sajadah-tua"
+          class="inline-flex shrink-0 items-center gap-2 rounded-lg bg-sajadah px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-sajadah-tua sm:px-4"
           @click="goToPortal"
         >
           <component :is="authStore.isAuthenticated ? LayoutDashboard : LogIn" class="size-4" />
-          {{ authStore.isAuthenticated ? 'Buka dashboard' : 'Masuk pengurus' }}
+          <template v-if="authStore.isAuthenticated">Dashboard</template>
+          <template v-else>Masuk<span class="hidden sm:inline">&nbsp;pengurus</span></template>
         </button>
       </div>
     </header>
@@ -110,7 +111,7 @@ const copyAccountNumber = async () => {
       <section class="mx-auto grid max-w-6xl items-center gap-12 px-4 pt-12 pb-20 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16 lg:pt-20 lg:pb-28">
         <div>
           <p class="text-sm font-semibold uppercase tracking-[0.2em] text-kuningan">{{ mosqueName }}</p>
-          <h1 class="mt-5 font-display text-5xl font-semibold leading-[1.05] tracking-wide text-jati sm:text-6xl lg:text-7xl">
+          <h1 class="mt-5 font-display text-4xl font-semibold leading-[1.05] tracking-wide text-balance text-jati min-[400px]:text-5xl sm:text-6xl lg:text-7xl">
             Amanah jamaah, tercatat rapi.
           </h1>
           <p class="mt-6 max-w-xl text-lg leading-relaxed text-jati-muda">
@@ -200,7 +201,7 @@ const copyAccountNumber = async () => {
             <template v-if="hasBankAccount && profile">
               <p class="text-xs font-semibold uppercase tracking-[0.16em] text-jati-muda">Rekening masjid</p>
               <p class="mt-3 text-lg font-semibold">{{ profile.bank_name }}</p>
-              <p class="tabular mt-1 font-mono text-2xl tracking-wider text-sajadah-tua">{{ profile.bank_account_number }}</p>
+              <p class="tabular mt-1 font-mono text-xl tracking-wider break-all text-sajadah-tua sm:text-2xl">{{ profile.bank_account_number }}</p>
               <p class="mt-1 text-sm text-jati-muda">a.n. {{ profile.bank_account_name }}</p>
               <button
                 type="button"

@@ -195,7 +195,7 @@ const tabs: { id: Tab; label: string }[] = [
         title="Belum ada penerimaan zakat"
         description="Zakat dan infaq yang diterima pengurus akan tercatat di sini."
       />
-      <div v-else class="overflow-x-auto">
+      <div v-else class="scrollbar-tipis overflow-x-auto overscroll-x-contain">
         <table class="tabel min-w-[720px]">
           <thead>
             <tr>
@@ -231,7 +231,7 @@ const tabs: { id: Tab; label: string }[] = [
         title="Belum ada penyaluran zakat"
         description="Bantuan yang disalurkan kepada mustahik akan tercatat di sini."
       />
-      <div v-else class="overflow-x-auto">
+      <div v-else class="scrollbar-tipis overflow-x-auto overscroll-x-contain">
         <table class="tabel min-w-[640px]">
           <thead>
             <tr>

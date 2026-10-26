@@ -107,7 +107,7 @@ const confirmDelete = async (user: UserResponse) => {
         :title="searchQuery ? 'Tidak ada pengguna yang cocok' : 'Belum ada pengguna'"
         :description="searchQuery ? 'Coba kata kunci lain.' : 'Undang pengurus agar mereka bisa mengelola data masjid.'"
       />
-      <div v-else class="overflow-x-auto">
+      <div v-else class="scrollbar-tipis overflow-x-auto overscroll-x-contain">
         <table class="tabel min-w-[760px]">
           <thead>
             <tr>
@@ -138,7 +138,7 @@ const confirmDelete = async (user: UserResponse) => {
               <td class="text-right">
                 <DropdownMenu v-if="user.id !== authStore.user?.id">
                   <DropdownMenuTrigger as-child>
-                    <button type="button" class="rounded-md p-2 text-jati-muda hover:bg-kapur hover:text-jati" :aria-label="`Aksi untuk ${user.username}`">
+                    <button type="button" class="tombol-ikon" :aria-label="`Aksi untuk ${user.username}`">
                       <MoreHorizontal class="size-4" />
                     </button>
                   </DropdownMenuTrigger>

@@ -287,7 +287,7 @@ const submitBooking = handleBookingSubmit((values) => createBookingMutation.muta
     <DataPanel v-if="activeTab === 'packages'">
       <div v-if="isLoadingPackages" class="p-8 text-center text-sm text-jati-muda">Memuat paket…</div>
       <EmptyState v-else-if="packageItems.length === 0" :icon="Beef" title="Belum ada paket qurban" description="Tambahkan paket beserta harga dan kuotanya sebelum membuka pendaftaran." />
-      <div v-else class="overflow-x-auto">
+      <div v-else class="scrollbar-tipis overflow-x-auto overscroll-x-contain">
         <table class="tabel min-w-[720px]">
           <thead>
             <tr>
@@ -312,10 +312,10 @@ const submitBooking = handleBookingSubmit((values) => createBookingMutation.muta
               </td>
               <td v-if="canManage">
                 <div class="flex justify-end gap-1">
-                  <button type="button" class="rounded-md p-2 text-jati-muda hover:bg-kapur hover:text-sajadah" :aria-label="`Ubah ${pkg.name}`" title="Ubah" @click="openPackageForm(pkg)">
+                  <button type="button" class="tombol-ikon" :aria-label="`Ubah ${pkg.name}`" title="Ubah" @click="openPackageForm(pkg)">
                     <Pencil class="size-4" />
                   </button>
-                  <button type="button" class="rounded-md p-2 text-jati-muda hover:bg-bata-muda hover:text-bata" :aria-label="`Hapus ${pkg.name}`" title="Hapus" @click="confirmDeletePackage(pkg)">
+                  <button type="button" class="tombol-ikon tombol-ikon-bahaya" :aria-label="`Hapus ${pkg.name}`" title="Hapus" @click="confirmDeletePackage(pkg)">
                     <Trash2 class="size-4" />
                   </button>
                 </div>
@@ -330,7 +330,7 @@ const submitBooking = handleBookingSubmit((values) => createBookingMutation.muta
     <DataPanel v-else-if="activeTab === 'bookings'">
       <div v-if="isLoadingBookings" class="p-8 text-center text-sm text-jati-muda">Memuat pendaftaran…</div>
       <EmptyState v-else-if="!bookings || bookings.length === 0" :icon="UserPlus" title="Belum ada shohibul" description="Pendaftaran shohibul qurban akan tampil di sini." />
-      <div v-else class="overflow-x-auto">
+      <div v-else class="scrollbar-tipis overflow-x-auto overscroll-x-contain">
         <table class="tabel min-w-[680px]">
           <thead>
             <tr>
@@ -358,7 +358,7 @@ const submitBooking = handleBookingSubmit((values) => createBookingMutation.muta
     <DataPanel v-else>
       <div v-if="isLoadingAnimals" class="p-8 text-center text-sm text-jati-muda">Memuat data hewan…</div>
       <EmptyState v-else-if="!animals || animals.length === 0" :icon="Beef" title="Belum ada hewan tercatat" description="Catat hewan dengan nomor tag saat hewan tiba dari penjual." />
-      <div v-else class="overflow-x-auto">
+      <div v-else class="scrollbar-tipis overflow-x-auto overscroll-x-contain">
         <table class="tabel min-w-[700px]">
           <thead>
             <tr>
@@ -379,10 +379,10 @@ const submitBooking = handleBookingSubmit((values) => createBookingMutation.muta
               <td><StatusBadge :tone="ANIMAL_STATUS[animal.status].tone">{{ ANIMAL_STATUS[animal.status].label }}</StatusBadge></td>
               <td v-if="canManage">
                 <div class="flex justify-end gap-1">
-                  <button type="button" class="rounded-md p-2 text-jati-muda hover:bg-kapur hover:text-sajadah" :aria-label="`Ubah hewan ${animal.tag_number}`" title="Ubah" @click="openAnimalForm(animal)">
+                  <button type="button" class="tombol-ikon" :aria-label="`Ubah hewan ${animal.tag_number}`" title="Ubah" @click="openAnimalForm(animal)">
                     <Pencil class="size-4" />
                   </button>
-                  <button type="button" class="rounded-md p-2 text-jati-muda hover:bg-bata-muda hover:text-bata" :aria-label="`Hapus hewan ${animal.tag_number}`" title="Hapus" @click="confirmDeleteAnimal(animal)">
+                  <button type="button" class="tombol-ikon tombol-ikon-bahaya" :aria-label="`Hapus hewan ${animal.tag_number}`" title="Hapus" @click="confirmDeleteAnimal(animal)">
                     <Trash2 class="size-4" />
                   </button>
                 </div>
@@ -409,7 +409,7 @@ const submitBooking = handleBookingSubmit((values) => createBookingMutation.muta
           <option v-for="(label, value) in PACKAGE_TYPE_LABELS" :key="value" :value="value">{{ label }}</option>
         </select>
       </FormField>
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid gap-4 sm:grid-cols-2">
         <FormField label="Harga (Rp)" for="package-price" :error="packageErrors.price" required>
           <input id="package-price" v-model.number="packagePrice" type="number" min="1" step="1" class="field-control tabular" :aria-invalid="Boolean(packageErrors.price)" />
         </FormField>
@@ -439,7 +439,7 @@ const submitBooking = handleBookingSubmit((values) => createBookingMutation.muta
       <FormField label="Nomor tag" for="animal-tag" :error="animalErrors.tag_number" required>
         <input id="animal-tag" v-model="animalTag" type="text" class="field-control font-mono" :aria-invalid="Boolean(animalErrors.tag_number)" />
       </FormField>
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid gap-4 sm:grid-cols-2">
         <FormField label="Jenis" for="animal-type" required>
           <select id="animal-type" v-model="animalType" class="field-control">
             <option v-for="(label, value) in ANIMAL_TYPE_LABELS" :key="value" :value="value">{{ label }}</option>

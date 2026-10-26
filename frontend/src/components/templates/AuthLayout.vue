@@ -15,7 +15,7 @@ const mosqueName = computed(() => profile.value?.name || 'Masjid kami');
 </script>
 
 <template>
-  <div class="grid min-h-screen bg-kapur lg:grid-cols-[1fr_1.1fr]">
+  <div class="grid min-h-dvh bg-kapur lg:grid-cols-[1fr_1.1fr]">
     <!-- Mosque panel (desktop) -->
     <aside class="pola-girih relative hidden flex-col justify-between overflow-hidden bg-sajadah-tua p-12 text-white lg:flex">
       <RouterLink :to="{ name: 'Landing' }" class="w-fit rounded-md">

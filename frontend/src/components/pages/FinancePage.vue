@@ -161,7 +161,7 @@ const onDetailOpenChange = (open: boolean) => {
         title="Belum ada transaksi"
         :description="canWrite ? 'Catat pemasukan atau pengeluaran pertama untuk mulai mengisi buku kas.' : 'Transaksi yang dicatat bendahara akan muncul di sini.'"
       />
-      <div v-else class="overflow-x-auto">
+      <div v-else class="scrollbar-tipis overflow-x-auto overscroll-x-contain">
         <table class="tabel min-w-[760px]">
           <thead>
             <tr>

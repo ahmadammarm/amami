@@ -159,7 +159,7 @@ const confirmDelete = async (asset: Asset) => {
         title="Belum ada aset tercatat"
         :description="canManage ? 'Catat aset masjid agar kondisi dan peminjamannya bisa dipantau.' : 'Aset yang dicatat pengurus akan tampil di sini.'"
       />
-      <div v-else class="overflow-x-auto">
+      <div v-else class="scrollbar-tipis overflow-x-auto overscroll-x-contain">
         <table class="tabel min-w-[760px]">
           <thead>
             <tr>
@@ -184,12 +184,12 @@ const confirmDelete = async (asset: Asset) => {
               </td>
               <td v-if="canManage">
                 <div class="flex justify-end gap-1">
-                  <button type="button" class="rounded-md p-2 text-jati-muda hover:bg-kapur hover:text-sajadah" :aria-label="`Ubah ${asset.name}`" title="Ubah" @click="openForm(asset)">
+                  <button type="button" class="tombol-ikon" :aria-label="`Ubah ${asset.name}`" title="Ubah" @click="openForm(asset)">
                     <Pencil class="size-4" />
                   </button>
                   <button
                     type="button"
-                    class="rounded-md p-2 text-jati-muda hover:bg-bata-muda hover:text-bata disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-jati-muda"
+                    class="tombol-ikon tombol-ikon-bahaya"
                     :disabled="asset.current_status === 'LOANED'"
                     :aria-label="`Hapus ${asset.name}`"
                     :title="asset.current_status === 'LOANED' ? 'Aset sedang dipinjam' : 'Hapus'"
@@ -215,7 +215,7 @@ const confirmDelete = async (asset: Asset) => {
       <FormField label="Nama aset" for="asset-name" :error="errors.name" required>
         <input id="asset-name" v-model="name" type="text" class="field-control" placeholder="Contoh: Sound system Yamaha" :aria-invalid="Boolean(errors.name)" />
       </FormField>
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid gap-4 sm:grid-cols-2">
         <FormField label="Kode aset (SKU)" for="asset-sku" :error="errors.sku" required>
           <input id="asset-sku" v-model="sku" type="text" class="field-control font-mono" placeholder="AST-001" :aria-invalid="Boolean(errors.sku)" />
         </FormField>
@@ -234,7 +234,7 @@ const confirmDelete = async (asset: Asset) => {
           <option v-for="status in EDITABLE_STATUSES" :key="status" :value="status">{{ ASSET_STATUS[status].label }}</option>
         </select>
       </FormField>
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid gap-4 sm:grid-cols-2">
         <FormField label="Harga beli (Rp)" for="asset-price" :error="errors.purchase_price">
           <input id="asset-price" v-model.number="purchasePrice" type="number" min="0" step="1" class="field-control tabular" />
         </FormField>

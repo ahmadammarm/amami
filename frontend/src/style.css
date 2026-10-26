@@ -127,6 +127,88 @@
       disabled:cursor-not-allowed disabled:bg-kapur disabled:text-jati-muda;
   }
 
+  /* Slim scrollbar for the dark sidebar. Invisible by default; it appears only
+     while the pointer is over (or keyboard focus is inside) the element marked
+     .area-scrollbar, and turns brass when the scroll area itself is hovered. */
+  .scrollbar-halus {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.2s;
+  }
+
+  .area-scrollbar:hover .scrollbar-halus,
+  .area-scrollbar:focus-within .scrollbar-halus {
+    scrollbar-color: rgb(255 255 255 / 0.22) transparent;
+  }
+
+  .area-scrollbar .scrollbar-halus:hover {
+    scrollbar-color: rgb(176 138 62 / 0.7) transparent;
+  }
+
+  .scrollbar-halus::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-halus::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-halus::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: transparent;
+  }
+
+  .area-scrollbar:hover .scrollbar-halus::-webkit-scrollbar-thumb,
+  .area-scrollbar:focus-within .scrollbar-halus::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 0.22);
+  }
+
+  .area-scrollbar .scrollbar-halus:hover::-webkit-scrollbar-thumb {
+    background: rgb(176 138 62 / 0.7);
+  }
+
+  /* Slim scrollbar for light surfaces (page content, dialogs). */
+  .scrollbar-tipis {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-batu-tua) transparent;
+  }
+
+  .scrollbar-tipis::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-tipis::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-tipis::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background: var(--color-batu-tua) padding-box;
+  }
+
+  .scrollbar-tipis::-webkit-scrollbar-thumb:hover {
+    background: var(--color-jati-muda) padding-box;
+  }
+
+  /* Icon-only row actions. 36px on mouse screens, 44px on touch screens. */
+  .tombol-ikon {
+    @apply inline-flex size-9 items-center justify-center rounded-md text-jati-muda transition-colors
+      hover:bg-kapur hover:text-sajadah disabled:cursor-not-allowed disabled:opacity-30
+      disabled:hover:bg-transparent disabled:hover:text-jati-muda;
+  }
+
+  .tombol-ikon-bahaya {
+    @apply hover:bg-bata-muda hover:text-bata;
+  }
+
+  @media (pointer: coarse) {
+    .tombol-ikon {
+      @apply size-11;
+    }
+  }
+
   /* Data tables: quiet header, shaf hairlines between rows. */
   .tabel {
     @apply w-full text-left text-sm;

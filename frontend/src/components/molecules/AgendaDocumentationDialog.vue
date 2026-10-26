@@ -101,13 +101,13 @@ const onOpenChange = (open: boolean) => {
 
 <template>
   <Dialog :open="true" @update:open="onOpenChange">
-    <DialogContent class="max-h-[90vh] gap-0 overflow-hidden rounded-2xl border-batu p-0 sm:max-w-3xl">
-      <div class="border-b border-batu px-6 pt-6 pb-4 pr-12">
+    <DialogContent class="max-h-[92dvh] gap-0 overflow-hidden rounded-2xl border-batu p-0 sm:max-w-3xl">
+      <div class="border-b border-batu px-5 pt-5 pb-4 pr-12 sm:px-6 sm:pt-6">
         <DialogTitle class="font-display text-xl font-semibold tracking-wide">Dokumentasi kegiatan</DialogTitle>
         <DialogDescription class="mt-1 text-sm text-jati-muda">{{ agenda.title }} · {{ agenda.day }}, {{ agenda.time }}</DialogDescription>
       </div>
 
-      <div class="max-h-[70vh] space-y-5 overflow-y-auto px-6 py-5">
+      <div class="scrollbar-tipis max-h-[75dvh] space-y-5 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
         <div v-if="canManage">
           <input ref="fileInput" type="file" multiple :accept="DOCUMENTATION_ACCEPT" class="sr-only" @change="onFilesSelected" />
           <button
@@ -146,7 +146,7 @@ const onOpenChange = (open: boolean) => {
               v-if="canManage"
               type="button"
               :disabled="deleteMutation.isPending.value"
-              class="absolute top-2 right-2 rounded-lg bg-white/95 p-1.5 text-bata opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+              class="absolute top-2 right-2 rounded-lg bg-white/95 p-2 text-bata shadow-sm transition-opacity focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
               :aria-label="`Hapus ${doc.file_name}`"
               @click="confirmDelete(doc)"
             >

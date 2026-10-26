@@ -9,7 +9,6 @@ import {
   Users,
   UserCog,
   Settings,
-  X,
   PackageSearch,
   CalendarRange,
   LogOut,
@@ -98,22 +97,15 @@ const signOut = async () => {
 </script>
 
 <template>
-  <aside class="flex h-full w-64 flex-col bg-sajadah-tua text-white">
-    <div class="flex items-center justify-between px-5 pt-6 pb-5">
-      <RouterLink :to="{ name: 'Dashboard' }" class="rounded-md" @click="emit('close')">
+  <aside class="area-scrollbar flex h-full w-64 max-w-full flex-col bg-sajadah-tua text-white">
+    <!-- On mobile the drawer closes via the backdrop, a menu choice or Escape. -->
+    <div class="px-5 pt-6 pb-5">
+      <RouterLink :to="{ name: 'Dashboard' }" class="inline-flex rounded-md" @click="emit('close')">
         <BrandMark variant="light" show-tagline />
       </RouterLink>
-      <button
-        type="button"
-        class="rounded-md p-1.5 text-white/70 hover:bg-white/10 hover:text-white lg:hidden"
-        aria-label="Tutup menu"
-        @click="emit('close')"
-      >
-        <X class="size-5" />
-      </button>
     </div>
 
-    <nav class="flex-1 space-y-6 overflow-y-auto px-3 pb-6" aria-label="Menu utama">
+    <nav class="scrollbar-halus flex-1 space-y-6 overflow-y-auto overscroll-contain px-3 pb-6" aria-label="Menu utama">
       <div v-for="group in visibleGroups" :key="group.label">
         <p class="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">{{ group.label }}</p>
         <ul class="space-y-0.5">

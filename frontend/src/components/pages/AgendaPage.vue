@@ -179,10 +179,10 @@ const confirmDelete = async (agenda: Agenda) => {
             <Images class="size-4" /> Dokumentasi
           </button>
           <div v-if="canManage" class="flex gap-1">
-            <button type="button" class="rounded-md p-2 text-jati-muda hover:bg-kapur hover:text-sajadah" :aria-label="`Ubah ${agenda.title}`" title="Ubah" @click="openForm(agenda)">
+            <button type="button" class="tombol-ikon" :aria-label="`Ubah ${agenda.title}`" title="Ubah" @click="openForm(agenda)">
               <Pencil class="size-4" />
             </button>
-            <button type="button" class="rounded-md p-2 text-jati-muda hover:bg-bata-muda hover:text-bata" :aria-label="`Hapus ${agenda.title}`" title="Hapus" @click="confirmDelete(agenda)">
+            <button type="button" class="tombol-ikon tombol-ikon-bahaya" :aria-label="`Hapus ${agenda.title}`" title="Hapus" @click="confirmDelete(agenda)">
               <Trash2 class="size-4" />
             </button>
           </div>
@@ -210,7 +210,7 @@ const confirmDelete = async (agenda: Agenda) => {
       <FormField label="Deskripsi" for="agenda-description" :error="errors.description">
         <textarea id="agenda-description" v-model="description" rows="3" class="field-control" placeholder="Pemateri, tema, atau catatan untuk jamaah" />
       </FormField>
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid gap-4 sm:grid-cols-2">
         <FormField label="Hari" for="agenda-day" :error="errors.day" required>
           <select id="agenda-day" v-model="day" class="field-control">
             <option v-for="d in DAYS" :key="d" :value="d">{{ d }}</option>
@@ -220,7 +220,7 @@ const confirmDelete = async (agenda: Agenda) => {
           <input id="agenda-time" v-model="time" type="time" class="field-control tabular" />
         </FormField>
       </div>
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid gap-4 sm:grid-cols-2">
         <FormField label="Lokasi" for="agenda-location" :error="errors.location">
           <input id="agenda-location" v-model="location" type="text" class="field-control" placeholder="Ruang utama" />
         </FormField>

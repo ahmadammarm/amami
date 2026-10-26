@@ -8,7 +8,7 @@ const router = useRouter();
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-kapur px-5">
+  <div class="flex min-h-dvh items-center justify-center bg-kapur px-5 py-10">
     <div class="w-full max-w-md text-center">
       <ArchBadge tone="kuningan" :size="64" class="mx-auto">
         <Lock class="size-6" />
