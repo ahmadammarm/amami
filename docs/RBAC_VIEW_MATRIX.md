@@ -1,4 +1,4 @@
-# amami ERP - RBAC & Frontend Access Matrix
+# Amami — RBAC & Access Matrix
 
 This document defines the relationship between backend permissions and frontend visibility. The application uses a **Unified Dashboard** approach where the UI adapts dynamically to the authenticated user's role.
 

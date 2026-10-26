@@ -1,36 +1,77 @@
-# Amami (Aplikasi Manajemen Masjid)
+# Amami
 
-Amami is a comprehensive Enterprise Resource Planning (ERP) platform designed to professionalize mosque operations. It transforms traditional, manual processes into a digital, auditable, and data-driven management framework. The system implements a strict Role-Based Access Control (RBAC) model to govern user permissions across various modules.
+**amami** (*Aplikasi Manajemen Masjid*) is a management system for mosques. It gives the mosque committee (pengurus) one auditable place to keep the cash ledger, zakat, qurban, the community registry, assets and the event calendar, and gives the congregation (jamaah) a public page with the mosque's profile and donation details.
 
-## Project Structure
+The interface is in Bahasa Indonesia.
 
-The project is structured as a monorepo, divided into a Go backend and a Vue 3 frontend:
+## What it does
 
-- `/backend` - The REST API server built with Go, Gin, and PostgreSQL.
-- `/frontend` - The web client built with Vue 3, Vite, and Tailwind CSS.
-- `/docs` - Contains authoritative project documentation, including feature specifications, RBAC view matrix, and roadmap.
+| Module | What the committee can do |
+|---|---|
+| **Keuangan** (finance) | Keep separate funds and an append-only ledger. Entries are never edited or deleted; mistakes are corrected with a linked reversal entry. |
+| **Zakat** | Record zakat and infaq received from muzakki, and distributions to mustahik. Cash posts to a fund automatically; rice (kg) is recorded without touching the ledger. |
+| **Jamaah** | Maintain the community registry, mark mustahik, and run a needs survey that produces a 0-100 poverty score used to prioritise zakat. |
+| **Qurban** | Define packages and quotas, register shohibul (the price comes from the package), and track animals from arrival to slaughter. |
+| **Inventaris** | Register mosque assets with their condition; lend them to jamaah and record returns. |
+| **Agenda** | Publish the weekly schedule of studies and events, and archive photo/PDF documentation per event. |
+| **Pengaturan / Pengguna** | Edit the mosque profile and bank account shown publicly; invite committee members and assign roles. |
 
-## Key Features
+Access is role-based and enforced on both the API and the UI:
 
-- **Strict Role-Based Access Control (RBAC):** Permissions are strictly enforced based on roles (SUPER_ADMIN, BENDAHARA, TAKMIR, SEKRETARIS, JAMAAH) at both the API and UI levels.
-- **Immutable Financial Ledger:** Financial records follow a strict "No Update / No Delete" rule. Corrections require explicit "Reversal Entries" to maintain absolute financial integrity and transparency.
-- **Zakat Management:** Full tracking of Zakat Fitrah and Zakat Maal collection and distribution, with atomic ledger integration for cash donations.
-- **Jamaah Database:** Community management system with dynamic tagging (e.g., Mustahik, Donatur).
-- **Agenda & Inventory Management:** Comprehensive tracking of mosque events, activities, physical assets, and item loans.
-- **Interactive Dashboards:** Role-specific dynamic dashboards that display aggregated metrics for finance, zakat, jamaah, and more.
+| Role | Typical access |
+|---|---|
+| `SUPER_ADMIN` | Users, settings, and read access across modules |
+| `BENDAHARA` (treasurer) | Ledger writes, zakat, jamaah |
+| `TAKMIR` | Zakat, jamaah and mustahik surveys, qurban, inventory, agenda |
+| `SEKRETARIS` (secretary) | Jamaah and surveys, qurban, inventory, agenda, settings |
+| `JAMAAH` | Read-only inventory and agenda |
 
-## Development Setup
+The exact grants are in [`docs/RBAC_VIEW_MATRIX.md`](docs/RBAC_VIEW_MATRIX.md).
 
-### Prerequisites
+## Repository layout
 
-- Go 1.25+
-- Node.js (v18+) and pnpm
-- PostgreSQL
+```
+backend/    Go REST API (Gin, GORM, PostgreSQL)
+frontend/   Vue 3 + TypeScript single-page app (Vite, Tailwind CSS 4)
+docs/       Feature specifications, RBAC matrix, database notes, roadmap
+```
 
-### Running the Application
+See [`backend/README.md`](backend/README.md) and [`frontend/README.md`](frontend/README.md) for details.
 
-To run the application locally, you will need to start both the backend and frontend servers in separate terminal instances. Please refer to the specific README files in the `/backend` and `/frontend` directories for detailed setup instructions.
+## Quick start
+
+**Requirements:** Go 1.25+, PostgreSQL, Node.js 24 (see `frontend/.nvmrc`), pnpm.
+
+```bash
+# 1. API
+cd backend
+cp .env.example .env        # then replace the example values with your own
+go run cmd/main.go -seed    # once, on an empty database: admin account + sample data
+go run cmd/main.go          # serves http://localhost:8080
+
+# 2. Web app (second terminal)
+cd frontend
+pnpm install
+pnpm dev                    # serves http://localhost:5173
+```
+
+Sign in at <http://localhost:5173/login> with the seeded administrator:
+
+| Email | Password |
+|---|---|
+| `admin@amami.org` | `admin123` |
+
+Change this password before using the system with real data. Other committee accounts are created from **Pengguna → Undang pengurus**; new users must set their own password at first sign-in.
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [`docs/FEATURE_SPECIFICATIONS.md`](docs/FEATURE_SPECIFICATIONS.md) | What each module does, and which features are available, API-only or planned |
+| [`docs/RBAC_VIEW_MATRIX.md`](docs/RBAC_VIEW_MATRIX.md) | Roles, page visibility and permission grants |
+| [`docs/DATABASE_DOCUMENTATION.md`](docs/DATABASE_DOCUMENTATION.md) | Tables, relationships and integrity rules |
+| [`CLAUDE.md`](CLAUDE.md) | Architecture and conventions for contributors |
 
 ## License
 
-This project is proprietary.
+Proprietary. All rights reserved.

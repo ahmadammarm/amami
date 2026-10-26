@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-amami (Aplikasi Manajemen Masjid) is a mosque ERP: a Go/Gin/GORM/PostgreSQL API in `backend/` and a Vue 3 + TypeScript SPA in `frontend/`. `docs/` is authoritative for intended behavior: `FEATURE_SPECIFICATIONS.md`, `RBAC_VIEW_MATRIX.md`, `DATABASE_DOCUMENTATION.md`, `ROADMAP.md`.
+amami (Aplikasi Manajemen Masjid) is a mosque ERP: a Go/Gin/GORM/PostgreSQL API in `backend/` and a Vue 3 + TypeScript SPA in `frontend/`. `docs/` is authoritative for intended behavior: `FEATURE_SPECIFICATIONS.md` (with each feature marked Available / API only / Planned), `RBAC_VIEW_MATRIX.md`, `DATABASE_DOCUMENTATION.md`. Update them when behavior changes.
 
 ## Commands
 

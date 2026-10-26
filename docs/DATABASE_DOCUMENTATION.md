@@ -1,353 +1,332 @@
-# amami - Master Database Documentation & Schema Specification
+# Amami — Database
 
-## Table of Contents
-1. [Executive Summary](#1-executive-summary)
-2. [Entity Relationship Diagram (ERD) Logic](#2-entity-relationship-diagram-erd-logic)
-3. [Module Specifications & Table Definitions](#3-module-specifications--table-definitions)
-    * [3.1 Core Auth & RBAC](#31-core-auth--rbac)
-    * [3.2 Jamaah & Profiles](#32-jamaah--profiles)
-    * [3.3 Finance & The Immutable Ledger](#33-finance--the-immutable-ledger)
-    * [3.4 Zakat & Social Welfare](#34-zakat--social-welfare)
-    * [3.5 Kurban & Operational Lifecycle](#35-kurban--operational-lifecycle)
-    * [3.6 Inventory Management](#36-inventory-management)
-    * [3.7 System & Utility Module](#37-system--utility-module)
-    * [3.8 Agenda & Inventory Module](#38-agenda--inventory-module)
-4. [Relationship & Referential Integrity](#4-relationship--referential-integrity)
-5. [Security & Auditing Protocols](#5-security--auditing-protocols)
-6. [Query Optimization & Performance](#6-query-optimization--performance)
-7. [Database Transaction & Atomicity Patterns](#7-database-transaction--atomicity-patterns)
+PostgreSQL schema for amami. It is generated from the GORM models in `backend/internal/domain/models.go` by `AutoMigrate` on every server start; there are no migration files. This document describes what that produces.
 
----
+## Conventions
 
-## 1. Executive Summary
-The **amami** database architecture is engineered to solve the core challenges of transparency and accountability in modern mosque management. By leveraging a high-integrity PostgreSQL foundation, the system ensures that every act of worship—whether it be financial Infaq, Zakat distribution, or Qurban participation—is recorded with surgical precision and religious "Amanah" (trust). This architectural choice allows the mosque to transition from manual, error-prone spreadsheets to a unified, scalable platform that can handle thousands of transactions and congregants without compromising data quality or system performance.
+- **Keys.** Records people create (users, jamaah, transactions, zakat, qurban bookings and animals, assets, agendas) use `UUID` keys from `gen_random_uuid()`. Lookup tables (roles, permissions, funds, qurban packages, settings, audit logs) use integer keys.
+- **Money** is `BIGINT` whole rupiah. Zakat amounts are `DECIMAL(12,2)` because they can be rice in kilograms; only whole-rupiah IDR amounts reach the ledger.
+- **Enums** are `VARCHAR` columns. The allowed values live in `domain/enums.go` and are enforced by request validation, not by database constraints.
+- **Soft deletes.** Tables with a `deleted_at` column are never hard-deleted by the application; GORM hides those rows from normal queries. Their unique columns use *partial* unique indexes (`WHERE deleted_at IS NULL`), so a deleted value can be reused.
+- **Extensions.** `pg_trgm` is created on start for fuzzy name search.
 
-Beyond mere record-keeping, this database serves as a strategic asset for the mosque's "Takmir" (management committee). The choice of strict typing, such as using BIGINT for all currency values, eliminates the rounding errors common in less sophisticated systems, ensuring that every Rupiah is accounted for in public reports. Furthermore, the modular design ensures that the system can grow; new features like educational management or funeral services can be integrated into the existing schema without requiring a massive overhaul of the core financial and user modules.
-
----
-
-## 2. Entity Relationship Diagram (ERD) Logic
-The Entity Relationship Diagram (ERD) below illustrates a highly decoupled yet deeply integrated modular system. At its center lies the `users` and `jamaah` tables, which serve as the primary actors for all other modules. This separation is intentional: it allows the mosque to track the demographic and social needs of thousands of physical congregants (Jamaah) while only providing application access (Users) to a subset of trusted volunteers and administrators. This logic ensures that the database remains a comprehensive community registry even for those who do not interact with the digital interface directly.
-
-The financial heart of the ERD is the connection between `funds`, `transactions`, and specific sub-modules like `zakat` and `qurban`. Every transaction is categorized and linked to a specific fund pot, ensuring that restricted donations (like those for orphans or building repairs) are never accidentally merged with general operational cash. The use of polymorphic `reference_id` links allows the central ledger to act as a single source of truth for the entire mosque, while still allowing the Zakat and Kurban modules to maintain their own specific business rules and religious requirements.
+## Relationships
 
 ```mermaid
 erDiagram
-    USERS ||--o| ROLES : "has role"
-    ROLES ||--|{ ROLE_PERMISSIONS : "defines"
-    PERMISSIONS ||--|{ ROLE_PERMISSIONS : "linked to"
-    
-    JAMAAH |o--o| USERS : "links to account"
-    
-    FUNDS ||--|{ TRANSACTIONS : "contains"
-    USERS ||--|{ TRANSACTIONS : "records"
-    
-    TRANSACTIONS ||--o| ZAKAT_DONATIONS : "references"
-    TRANSACTIONS ||--o| ZAKAT_DISTRIBUTIONS : "references"
-    TRANSACTIONS ||--o| QURBAN_BOOKINGS : "references"
-    
-    JAMAAH ||--o| ZAKAT_DONATIONS : "donates"
-    JAMAAH ||--o| ZAKAT_DISTRIBUTIONS : "receives"
-    JAMAAH ||--o| MUSTAHIK_DATA : "assessed as"
-    
-    JAMAAH ||--o| QURBAN_BOOKINGS : "books"
-    QURBAN_PACKAGES ||--|{ QURBAN_BOOKINGS : "offered in"
-    
-    ASSETS ||--|{ ASSET_LOANS : "borrowed"
-    JAMAAH ||--|{ ASSET_LOANS : "borrows"
+    ROLES ||--o{ USERS : "assigned to"
+    ROLES ||--o{ ROLE_PERMISSIONS : grants
+    PERMISSIONS ||--o{ ROLE_PERMISSIONS : "granted by"
+    USERS |o--o| JAMAAHS : "profile"
+
+    FUNDS ||--o{ TRANSACTIONS : holds
+    USERS ||--o{ TRANSACTIONS : records
+    TRANSACTIONS |o--o| TRANSACTIONS : "reversed by"
+
+    TRANSACTIONS |o--o| ZAKAT_DONATIONS : "posts"
+    TRANSACTIONS |o--o| ZAKAT_DISTRIBUTIONS : "posts"
+    JAMAAHS ||--o{ ZAKAT_DONATIONS : "gives (muzakki)"
+    JAMAAHS ||--o{ ZAKAT_DISTRIBUTIONS : "receives (mustahik)"
+    JAMAAHS ||--o| MUSTAHIK_DATA : "surveyed in"
+
+    QURBAN_PACKAGES ||--o{ QURBAN_BOOKINGS : "booked as"
+    JAMAAHS ||--o{ QURBAN_BOOKINGS : "books (shohibul)"
+
+    ASSETS ||--o{ ASSET_LOANS : "lent in"
+    JAMAAHS ||--o{ ASSET_LOANS : borrows
+
+    AGENDAS ||--o{ AGENDA_DOCUMENTATIONS : documents
+    USERS ||--o{ AUDIT_LOGS : "acts in"
 ```
 
----
+## Tables
 
-## 3. Module Specifications & Table Definitions
+### Access control
 
-### 3.1 Core Auth & RBAC
-The Core Auth module is built on a robust Role-Based Access Control (RBAC) model. Unlike simple "Admin" or "User" flags, this system uses a three-tier permissions structure involving `roles`, `permissions`, and a joining `role_permissions` table. This level of granularity is essential for maintaining the "Separation of Duties" best practice, which is a cornerstone of fraud prevention in community organizations.
+**`roles`** — `id` INT PK, `name` VARCHAR(50) UNIQUE, `description` TEXT.
+Seeded values: `SUPER_ADMIN`, `BENDAHARA`, `TAKMIR`, `SEKRETARIS`, `JAMAAH`.
 
-#### `roles`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | INT | PK |
-| name | VARCHAR(50) | UNIQUE, NOT NULL |
-| description | TEXT | |
-**Indexes:** `PK (id)`, `UNIQUE (name)`
+**`permissions`** — `id` INT PK, `code` VARCHAR(50) UNIQUE, `description` TEXT.
 
-#### `permissions`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | INT | PK |
-| code | VARCHAR(50) | UNIQUE, NOT NULL |
-| description | TEXT | |
-**Indexes:** `PK (id)`, `UNIQUE (code)`
+**`role_permissions`** — `role_id`, `permission_id` (composite PK; both cascade on delete).
 
-#### `role_permissions`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| role_id | INT | PK, FK -> `roles(id)` |
-| permission_id | INT | PK, FK -> `permissions(id)` |
-**Foreign Keys:** `role_id` ref `roles(id)`, `permission_id` ref `permissions(id)`
-**Indexes:** `PK (role_id, permission_id)`, `INDEX (permission_id)`
+`roles`, `permissions` and `role_permissions` are rewritten on every server start to match `domain.RolePermissions` (see `docs/RBAC_VIEW_MATRIX.md`). Edit grants in code, not in the database.
 
-#### `users`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | UUID | PK, DEFAULT gen_random_uuid() |
-| username | VARCHAR(50) | UNIQUE, NOT NULL |
-| email | VARCHAR(100) | UNIQUE, NOT NULL |
-| password_hash | TEXT | NOT NULL |
-| role_id | INT | FK -> `roles(id)` |
-| status | VARCHAR(20) | DEFAULT 'ACTIVE' |
-**Foreign Keys:** `role_id` ref `roles(id)`
-**Indexes:** `PK (id)`, `UNIQUE (username)`, `UNIQUE (email)`, `INDEX (role_id)`
+**`users`**
 
----
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID | PK |
+| username | VARCHAR(50) | unique among live rows |
+| email | VARCHAR(100) | unique among live rows |
+| password_hash | TEXT | bcrypt |
+| role_id | INT | FK `roles`, RESTRICT |
+| status | VARCHAR(50) | `ACTIVE`, `SUSPENDED`, `PENDING_PASSWORD_CHANGE` |
+| last_login_at | TIMESTAMPTZ | nullable |
+| created_at, updated_at | TIMESTAMPTZ | |
+| deleted_at | TIMESTAMPTZ | soft delete |
 
-### 3.2 Jamaah & Profiles
-This module ensures that the security credentials of an administrator are decoupled from their personal identity as a congregant. This facilitates features like account deactivation without losing the historical data associated with that person's contributions or activities in the mosque.
+### Jamaah
 
-#### `jamaah`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | UUID | PK, DEFAULT gen_random_uuid() |
-| user_id | UUID | UNIQUE, FK -> `users(id)`, NULLABLE |
-| full_name | VARCHAR(100) | NOT NULL |
+**`jamaahs`** — the community registry. Not every jamaah has a user account; committee accounts each get a linked jamaah profile.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID | PK |
+| user_id | UUID | unique, FK `users`, SET NULL; nullable |
+| full_name | VARCHAR(100) | GIN trigram index for search |
 | phone | VARCHAR(20) | |
 | address | TEXT | |
-| is_mustahik | BOOLEAN | DEFAULT FALSE |
-| mustahik_score | DECIMAL(5,2) | DEFAULT 0.00 |
-**Foreign Keys:** `user_id` ref `users(id)` (ON DELETE SET NULL)
-**Indexes:** `PK (id)`, `INDEX (user_id)`, `INDEX (full_name)` (Trigram search)
+| is_mustahik | BOOLEAN | indexed; only mustahik can receive zakat |
+| mustahik_score | DECIMAL(5,2) | 0-100 poverty score, indexed for sorting |
+| created_at, updated_at | TIMESTAMPTZ | |
+| deleted_at | TIMESTAMPTZ | soft delete |
 
----
+**`mustahik_data`** — the latest needs survey per jamaah (one row each, upserted).
 
-### 3.3 Finance & The Immutable Ledger
-If a mistake is made during data entry, the system does not allow for a "Delete" or "Edit" of the original record; instead, a compensatory or "Reversal" transaction must be created. Each fund maintains a `current_balance` which is updated atomically whenever a transaction is recorded.
-
-#### `funds`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | INT | PK |
-| name | VARCHAR(100) | NOT NULL |
-| code | VARCHAR(20) | UNIQUE, NOT NULL |
-| current_balance | BIGINT | DEFAULT 0 |
-**Indexes:** `PK (id)`, `UNIQUE (code)`
-
-#### `transactions`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | UUID | PK, DEFAULT gen_random_uuid() |
-| fund_id | INT | FK -> `funds(id)` |
-| type | VARCHAR(10) | DEBIT/CREDIT |
-| amount | BIGINT | CHECK (amount > 0) |
-| category | VARCHAR(30) | INFAQ, ZAKAT, KURBAN, etc. |
-| reference_id | UUID | Polymorphic FK |
-| metadata | JSONB | |
-| created_by | UUID | FK -> `users(id)` |
-| created_at | TIMESTAMP | DEFAULT NOW() |
-**Foreign Keys:** `fund_id` ref `funds(id)`, `created_by` ref `users(id)`
-**Indexes:** `PK (id)`, `INDEX (fund_id, created_at)`, `INDEX (reference_id)`, `INDEX (created_at)`
-
----
-
-### 3.4 Zakat & Social Welfare
-This data is processed by a service-layer algorithm to generate a `mustahik_score`, which allows the Takmir to prioritize distributions based on objective poverty criteria rather than subjective bias, ensuring that the mosque's social impact is both fair and efficient.
-
-#### `zakat_donations`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
+| Column | Type | Notes |
+|---|---|---|
 | id | UUID | PK |
-| transaction_id | UUID | UNIQUE, FK -> `transactions(id)` |
-| muzakki_id | UUID | FK -> `jamaah(id)` |
-| zakat_type | VARCHAR(30) | FITRAH, MAAL, PROFESI |
-**Foreign Keys:** `transaction_id` ref `transactions(id)`, `muzakki_id` ref `jamaah(id)`
-**Indexes:** `PK (id)`, `UNIQUE (transaction_id)`, `INDEX (muzakki_id)`
-
-#### `mustahik_data`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | UUID | PK |
-| jamaah_id | UUID | UNIQUE, FK -> `jamaah(id)` |
-| total_income | BIGINT | |
+| jamaah_id | UUID | unique, FK `jamaahs`, RESTRICT |
+| total_income | BIGINT | monthly household income, IDR |
 | dependents_count | INT | |
-| house_status | VARCHAR(50) | |
-**Foreign Keys:** `jamaah_id` ref `jamaah(id)`
-**Indexes:** `PK (id)`, `UNIQUE (jamaah_id)`
+| house_status | VARCHAR(50) | `OWNED`, `FAMILY`, `RENTED`, `NONE` |
+| has_disability | BOOLEAN | |
+| criteria_notes | TEXT | |
+| surveyed_by | UUID | FK `users`, SET NULL |
+| updated_at | TIMESTAMPTZ | |
 
-#### `zakat_distributions`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
+Saving a survey recalculates `jamaahs.mustahik_score` in the same database transaction.
+
+### Finance
+
+**`funds`** — `id` INT PK, `name` VARCHAR(100), `code` VARCHAR(20) UNIQUE, `current_balance` BIGINT, `created_at`, `updated_at`.
+
+**`transactions`** — the ledger. Rows are only ever inserted.
+
+| Column | Type | Notes |
+|---|---|---|
 | id | UUID | PK |
-| transaction_id | UUID | UNIQUE, FK -> `transactions(id)` |
-| mustahik_id | UUID | FK -> `jamaah(id)` |
-| amount | BIGINT | |
-**Foreign Keys:** `transaction_id` ref `transactions(id)`, `mustahik_id` ref `jamaah(id)`
-**Indexes:** `PK (id)`, `UNIQUE (transaction_id)`, `INDEX (mustahik_id)`
+| fund_id | INT | FK `funds`, RESTRICT |
+| type | VARCHAR(10) | `CREDIT` (in) or `DEBIT` (out) |
+| amount | BIGINT | `CHECK (amount > 0)` |
+| category | VARCHAR(30) | indexed; reversals use `REVERSAL` |
+| description | VARCHAR(255) | |
+| reference_id | UUID | optional link to a related record |
+| reversal_of_id | UUID | **unique**; set on a reversal entry, pointing at the transaction it cancels |
+| metadata | JSONB | structured extras |
+| created_by | UUID | FK `users`, RESTRICT |
+| created_at | TIMESTAMPTZ | |
 
----
+Indexes: `(fund_id, created_at)`, `created_at`, `category`, `reference_id`, `created_by`, unique `reversal_of_id`.
 
-### 3.5 Kurban & Operational Lifecycle
-The `qurban_animals` table tracks physical inventory. Each animal is assigned a unique tag and monitored from the moment of purchase through slaughter to final distribution. This automation replaces the chaotic paper-based systems often used in mosques.
+The unique index on `reversal_of_id` is what guarantees a transaction can be reversed at most once, even under concurrent requests.
 
-#### `qurban_packages`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | INT | PK |
-| name | VARCHAR(100) | NOT NULL |
-| type | VARCHAR(20) | COW_PART, COW_WHOLE, GOAT |
-| price | BIGINT | |
-| year_hijri | INT | |
-**Indexes:** `PK (id)`, `INDEX (year_hijri)`
+### Zakat
 
-#### `qurban_bookings`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
+**`zakat_donations`** — zakat and infaq received.
+
+| Column | Type | Notes |
+|---|---|---|
 | id | UUID | PK |
-| shohibul_id | UUID | FK -> `jamaah(id)` |
-| package_id | INT | FK -> `qurban_packages(id)` |
-| payment_status | VARCHAR(20) | PENDING, PAID, CANCELLED |
-**Foreign Keys:** `shohibul_id` ref `jamaah(id)`, `package_id` ref `qurban_packages(id)`
-**Indexes:** `PK (id)`, `INDEX (shohibul_id)`, `INDEX (package_id)`
-
-#### `qurban_animals`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | UUID | PK |
-| tag_number | VARCHAR(50) | UNIQUE |
-| status | VARCHAR(20) | ALIVE, SLAUGHTERED, DISTRIBUTED |
-**Indexes:** `PK (id)`, `UNIQUE (tag_number)`, `INDEX (status)`
-
----
-
-### 3.6 Inventory Management
-The inventory and loan systems are optimized with indexes on `return_date` and `sku`, ensuring that the Takmir can quickly identify which assets are currently on loan and which are available for use.
-
-#### `assets`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | UUID | PK |
-| name | VARCHAR(255) | NOT NULL |
-| sku | VARCHAR(50) | UNIQUE |
-| current_status | VARCHAR(20) | GOOD, REPAIR, DISPOSED |
-**Indexes:** `PK (id)`, `UNIQUE (sku)`, `INDEX (name)`
-
-#### `asset_loans`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | UUID | PK |
-| asset_id | UUID | FK -> `assets(id)` |
-| jamaah_id | UUID | FK -> `jamaah(id)` |
-| loan_date | TIMESTAMP | NOT NULL |
-| return_date | TIMESTAMP | NULLABLE |
-**Foreign Keys:** `asset_id` ref `assets(id)`, `jamaah_id` ref `jamaah(id)`
-**Indexes:** `PK (id)`, `INDEX (asset_id)`, `INDEX (jamaah_id)`, `INDEX (return_date)`
-
----
-
-### 3.7 System & Utility Module
-This module handles global settings and internal communication for the Takmir.
-
-#### `system_settings`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | INT | PK, AUTO_INCREMENT |
-| key | VARCHAR(50) | UNIQUE, NOT NULL (e.g., 'mosque_name', 'smtp_host') |
-| value | TEXT | NOT NULL |
-| is_secret | BOOLEAN | DEFAULT FALSE (If true, value is encrypted) |
-**Indexes:** `PK (id)`, `UNIQUE (key)`
-
-#### `memos`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | UUID | PK, DEFAULT gen_random_uuid() |
-| title | VARCHAR(200) | NOT NULL |
-| content | TEXT | NOT NULL |
-| author_id | UUID | FK -> `users(id)`, NOT NULL |
-| is_pinned | BOOLEAN | DEFAULT FALSE |
-| created_at | TIMESTAMP | DEFAULT NOW() |
-**Foreign Keys:** `author_id` ref `users(id)`
-**Indexes:** `PK (id)`, `INDEX (created_at)`
-
----
-
-### 3.8 Agenda & Inventory Module
-This module handles the scheduling and documentation of mosque activities.
-
-#### `agendas`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | UUID | PK, DEFAULT gen_random_uuid() |
-| title | VARCHAR(200) | NOT NULL |
+| transaction_id | UUID | FK `transactions`, RESTRICT; set when cash was posted to a fund |
+| muzakki_id | UUID | FK `jamaahs`, RESTRICT |
+| zakat_type | VARCHAR(30) | `FITRAH_BERAS`, `MAAL`, `INFAQ` |
+| amount | DECIMAL(12,2) | |
+| unit | VARCHAR(20) | `IDR`, `KG`, `LITER` |
 | description | TEXT | |
-| start_time | TIMESTAMP | NOT NULL |
-| end_time | TIMESTAMP | NOT NULL |
+| metadata | JSONB | |
+| created_at | TIMESTAMPTZ | |
+
+**`zakat_distributions`** — aid given to mustahik. Same shape, with `mustahik_id` (FK `jamaahs`) instead of `muzakki_id`, and `distributed_at` instead of `created_at`.
+
+Zakat rows have no `deleted_at`: they are part of the financial record and are never removed.
+
+### Qurban
+
+**`qurban_packages`** — `id` INT PK, `name`, `type` (`KAMBING`, `DOMBA`, `SAPI`, `SAPI_KOLEKTIF`), `price` BIGINT, `year_hijri` INT (indexed), `stock_total` INT, `stock_remaining` INT `CHECK (>= 0)`, `deleted_at`.
+
+**`qurban_bookings`** — `id` UUID PK, `shohibul_id` FK `jamaahs`, `package_id` FK `qurban_packages`, `booking_date`, `payment_status` (`PENDING`, `PAID`), `total_amount` BIGINT (copied from the package price at booking time), `metadata` JSONB.
+
+**`qurban_animals`** — `id` UUID PK, `tag_number` VARCHAR(50) (unique among live rows), `type` (`KAMBING`, `DOMBA`, `SAPI`), `weight` DECIMAL(6,2), `status` (`AVAILABLE`, `ASSIGNED`, `SLAUGHTERED`, indexed), `vendor_info` TEXT, `deleted_at`.
+
+### Inventory
+
+**`assets`** — `id` UUID PK, `name` (indexed), `sku` VARCHAR(50) (unique among live rows), `purchase_date`, `purchase_price` BIGINT, `current_status`, `location`, `deleted_at`.
+
+`current_status` is one of `GOOD`, `LOANED`, `NEEDS_REPAIR`, `REPAIR`, `BROKEN`. `LOANED` is set and cleared only by the loan workflow.
+
+**`asset_loans`** — `id` UUID PK, `asset_id` FK `assets`, `jamaah_id` FK `jamaahs`, `loan_date`, `due_date` (nullable), `return_date` (nullable, indexed; null means still on loan), `condition_notes`.
+
+### Agenda
+
+**`agendas`** — weekly schedule entries.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID | PK |
+| title | VARCHAR(200) | |
+| description | TEXT | |
+| day | VARCHAR(20) | Indonesian day name, e.g. `Senin` |
+| time | VARCHAR(20) | `HH:MM` |
 | location | VARCHAR(100) | |
-| status | VARCHAR(20) | SCHEDULED, ONGOING, COMPLETED, CANCELLED |
-| created_by | UUID | FK -> `users(id)` |
-**Foreign Keys:** `created_by` ref `users(id)`
-**Indexes:** `PK (id)`, `INDEX (start_time)`, `INDEX (status)`
+| status | VARCHAR(30) | `SCHEDULED`, `ONGOING`, `COMPLETED`, `CANCELLED` |
+| created_by_id | UUID | FK `users`, SET NULL |
+| deleted_at | TIMESTAMPTZ | soft delete |
 
-#### `agenda_documentation`
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | UUID | PK, DEFAULT gen_random_uuid() |
-| agenda_id | UUID | FK -> `agendas(id)`, NOT NULL |
-| file_url | TEXT | NOT NULL |
-| file_type | VARCHAR(50) | IMAGE, PDF |
-| uploaded_by| UUID | FK -> `users(id)` |
-| uploaded_at| TIMESTAMP | DEFAULT NOW() |
-**Foreign Keys:** `agenda_id` ref `agendas(id)`, `uploaded_by` ref `users(id)`
-**Indexes:** `PK (id)`, `INDEX (agenda_id)`
+**`agenda_documentations`** — uploaded photos and PDFs.
 
----
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID | PK |
+| agenda_id | UUID | FK `agendas`, CASCADE |
+| storage_key | TEXT | path inside `UPLOAD_DIR`; never sent to clients |
+| file_url | TEXT | public URL under `/uploads/` |
+| file_name | VARCHAR(255) | original name |
+| file_type | VARCHAR(50) | detected MIME type: `image/jpeg`, `image/png`, `image/webp`, `application/pdf` |
+| file_size | BIGINT | bytes |
+| uploaded_by | UUID | FK `users`, SET NULL |
+| uploaded_at | TIMESTAMPTZ | |
 
-## 4. Relationship & Referential Integrity
-Referential integrity is enforced via Foreign Key constraints. Most financial and religious records are set to `RESTRICT` on delete, meaning they can never be removed if they are part of a larger chain of events. Conversely, social links like `jamaah.user_id` use a `SET NULL` policy to preserve historical data if an account is deleted.
+Soft-deleting an agenda keeps its documentation for the archive.
 
----
+### System
 
-## 5. Security & Auditing Protocols
-Security is implemented using UUIDs to prevent IDOR attacks and strict separation of PII. Every table involving financial or operational changes includes a `created_by` and `created_at` timestamp, creating a detailed digital paper trail for accountability.
+**`system_settings`** — key/value store: `id` INT PK, `key` VARCHAR(50) UNIQUE, `value` TEXT, `is_secret` BOOLEAN. Holds the mosque profile (`mosque_name`, `mosque_address`, bank account, zakat fitrah amount, active Hijri year) and SMTP settings. `is_secret` marks values the API never returns (such as the SMTP password); they are **not** encrypted at rest.
 
----
+**`audit_logs`** — `id` INT PK, `user_id` FK `users`, `action` (e.g. `LOGIN`, `PASSWORD_CHANGE`), `entity`, `entity_id`, `metadata`, `created_at` (indexed).
 
-## 6. Query Optimization & Performance
-To ensure that the application remains responsive even as the mosque's data grows over several years, we have implemented a proactive indexing strategy. The most critical performance path is the financial reporting system, which is powered by a composite index on `transactions(fund_id, created_at)`. This allows the database to instantly filter and aggregate thousands of records for the "Public Dashboard" without needing to scan the entire table, ensuring that congregants get a real-time view of the mosque's finances whenever they scan a QRIS code.
+**`memos`** — `id` UUID PK, `title`, `content`, `author_id` FK `users`, `is_pinned`, `created_at`. The table exists for the planned internal memo feature; no API uses it yet.
 
-We have also optimized for the day-to-day administrative experience. Search operations for congregants are accelerated by GIN (Generalized Inverted Index) or Trigram indexes on the `full_name` column, allowing for "fuzzy" or partial name searches that are lightning-fast. Similarly, the inventory and loan systems are optimized with indexes on `return_date` and `sku`, ensuring that the Takmir can quickly identify which assets are currently on loan and which are available for use. This technical foresight ensures that the system scales gracefully from a small village mosque to a large urban Islamic center.
+## Integrity rules
 
----
+- **Foreign keys** on financial and religious records are `RESTRICT`, so nothing that a ledger entry, zakat record or booking depends on can be hard-deleted. Links that only describe *who* did something (`surveyed_by`, `uploaded_by`, `created_by_id`, `jamaahs.user_id`) are `SET NULL`.
+- **Atomic postings.** Every ledger write runs in one database transaction that locks the fund row (`SELECT ... FOR UPDATE`), rejects a debit larger than the balance, updates `current_balance`, and inserts the transaction. Zakat with a fund and reversals use the same routine, so a fund balance always equals the sum of its ledger rows.
+- **Qurban bookings** lock the package row, check and decrement `stock_remaining`, and insert the booking in one transaction, so a package cannot be overbooked.
+- **Loans** create the loan and mark the asset `LOANED` in one transaction; returns set `return_date` and mark the asset `GOOD` together.
 
-## 7. Database Transaction & Atomicity Patterns
-To maintain the "Amanah" (trust) of the mosque's data, critical business flows must be wrapped in database transactions. This ensures that multi-step operations either succeed completely or fail without leaving partial, inconsistent data in the system. As a senior engineering standard, any operation that modifies a financial balance while creating a corresponding log MUST be atomic.
+## Data access patterns
 
-### 7.1 Financial Infaq & Expenses
-The flow for recording any movement of money involves two distinct steps: creating a record in the `transactions` table and updating the `current_balance` in the `funds` table. If the transaction record is created but the fund balance fails to update, the system will show an incorrect total.
+How the repositories (`backend/internal/repository/`) talk to the database. PostgreSQL runs at its default isolation level, `READ COMMITTED`; correctness under concurrent use comes from row locks and constraints, not from a stricter isolation level.
 
-**Atomicity Requirement:**
-1.  **BEGIN TRANSACTION**
-2.  Lock the `funds` row for the specific category.
-3.  INSERT new `transactions` record.
-4.  UPDATE `funds.current_balance` by adding/subtracting the amount.
-5.  **COMMIT TRANSACTION**
+### Transaction boundaries
 
-### 7.2 Zakat Distribution Lifecycle
-Zakat distribution is a multi-table operation involving the central ledger, the distribution log, and the recipient's status. Because Zakat funds are religiously restricted, the system must ensure that the reduction in the "Zakat Fund" pot is perfectly synchronized with the record of which Mustahik received the aid.
+A database transaction is opened with GORM's `db.Transaction(func(tx) error { ... })`: returning an error rolls everything back, returning `nil` commits. The boundary sits in the **repository**, around exactly the rows that must change together. Services never receive a `*gorm.DB`, so they cannot widen or leak a transaction.
 
-**Atomicity Requirement:**
-1.  **BEGIN TRANSACTION**
-2.  Verify `funds.current_balance` for the Zakat pot has sufficient amount.
-3.  INSERT `transactions` record (Type: DEBIT).
-4.  INSERT `zakat_distributions` record linking to the transaction and Mustahik.
-5.  UPDATE `funds.current_balance`.
-6.  **COMMIT TRANSACTION**
+| Operation | Repository method | Writes in one transaction |
+|---|---|---|
+| Record income / expense | `finance.CreateTransaction` | fund balance + ledger row |
+| Reverse a transaction | `finance.ReverseTransaction` | fund balance + reversal row |
+| Collect zakat | `zakat.CollectZakat` | fund balance + ledger row (if cash) + donation |
+| Distribute zakat | `zakat.DistributeZakat` | fund balance + ledger row (if cash) + distribution |
+| Book qurban | `qurban.CreateBooking` | package quota + booking |
+| Lend / return asset | `inventory.CreateLoan`, `ReturnLoan` | loan row + asset status |
+| Save mustahik survey | `jamaah.SaveSurvey` | survey upsert + jamaah score |
+| Invite user | `user.CreateUserWithProfile` | user + linked jamaah profile |
+| Delete user | `user.DeleteUser` | soft delete of jamaah profile + user |
+| Sync RBAC on start | `seed.SyncRBAC` | permissions, roles, grants |
 
-### 7.3 Qurban Booking & Payment
-Managing Qurban involves tracking both a commitment (Booking) and a financial event (Payment). For a booking to be valid, the system must decrement the available stock in `qurban_packages` while simultaneously recording the booking details and any initial deposit in the ledger.
+### Pessimistic locking: the ledger posting routine
 
-**Atomicity Requirement:**
-1.  **BEGIN TRANSACTION**
-2.  Check `qurban_packages.stock_remaining` > 0.
-3.  UPDATE `qurban_packages` decrementing `stock_remaining`.
-4.  INSERT `qurban_bookings` record.
-5.  (If payment made) INSERT `transactions` record and UPDATE `funds` balance.
-6.  **COMMIT TRANSACTION**
+Every movement of money goes through one function, `repository/finance.PostTransaction(tx, entry)`, which must be called inside a transaction:
+
+```
+SELECT * FROM funds WHERE id = $fund FOR UPDATE   -- lock the fund row
+-- DEBIT larger than current_balance  -> abort with ErrInsufficientBalance
+UPDATE funds SET current_balance = ... WHERE id = $fund
+INSERT INTO transactions (...)
+COMMIT                                            -- lock released
+```
+
+`FOR UPDATE` makes concurrent postings to the same fund wait for each other, so two expenses can never both pass the balance check against the same starting balance. Postings to different funds do not block each other. Because manual entries, reversals and both zakat flows all reuse this one routine, the rule "a fund balance equals the sum of its ledger rows" lives in exactly one place.
+
+### Business rule inside the transaction: reversals
+
+A reversal has to read the original entry, decide whether it may be reversed, and post the opposite entry, all atomically. Rules belong in the service and atomicity in the repository, so the service passes a **builder callback** into the transaction:
+
+```go
+repo.ReverseTransaction(id, func(original *domain.Transaction) (*domain.Transaction, error) {
+    return BuildReversal(original, reason, userID) // pure service logic
+})
+```
+
+Inside the transaction, the repository:
+
+1. locks the original row (`FOR UPDATE`);
+2. checks that no reversal points at it yet;
+3. calls the builder, which rejects reversing a reversal;
+4. posts the result through `PostTransaction`.
+
+Lock order is always transaction row, then fund row. Concurrent reversals therefore queue on the transaction row before touching the fund, and cannot deadlock each other.
+
+### Constraints as the final guard
+
+Application checks run first so users get a clear message, but the database has the last word:
+
+| Constraint | Protects against |
+|---|---|
+| unique `transactions.reversal_of_id` | two reversals of the same entry, even if both pass the application check at the same instant |
+| `CHECK (amount > 0)` on transactions | zero or negative ledger rows |
+| `CHECK (stock_remaining >= 0)` on qurban packages | a negative quota |
+| partial unique indexes on username, email, SKU, tag number | duplicate live records |
+| foreign keys with `RESTRICT` | deleting records the ledger, zakat or bookings depend on |
+
+The connection is opened with `TranslateError: true`, so violations surface as `gorm.ErrDuplicatedKey` and `gorm.ErrForeignKeyViolated`. Services turn those into `409 Conflict` or `400 Validation` errors; for example, a race on `reversal_of_id` is reported as "transaction has already been reversed", not as a server error.
+
+### Atomic counters
+
+Reserving qurban quota locks the package row and decrements in SQL:
+
+```sql
+UPDATE qurban_packages SET stock_remaining = stock_remaining - 1 WHERE id = $id
+```
+
+The new value is computed by the database from the current row, not from a value the application read earlier, so concurrent bookings cannot overwrite each other's decrement.
+
+### Upserts
+
+Writes that mean "create or replace" use `INSERT ... ON CONFLICT` rather than read-then-write:
+
+- `mustahik_data`: one survey per jamaah, conflict on `jamaah_id` updates the answers;
+- `system_settings`: conflict on `key` updates the value;
+- `role_permissions`: `ON CONFLICT DO NOTHING`, so syncing grants is idempotent.
+
+### Partial-column updates
+
+Updates name the columns they write, for example `Model(asset).Select("name", "sku", ...).Updates(asset)`. Without `Select`, GORM skips zero values (`false`, `0`, `""`), so an edit that clears a field would be silently ignored. With `Save`, a partially loaded row would overwrite unloaded columns. Credentials are changed only with a dedicated `UpdateCredentials` that touches `password_hash` and `status` and nothing else.
+
+### Soft deletes and history
+
+Models with `gorm.DeletedAt` get `deleted_at IS NULL` added to every query automatically; `Delete` sets the timestamp instead of removing the row. Lists that show history (zakat records, qurban bookings) preload the people and packages they refer to with `Unscoped()`, so a deleted jamaah's name still appears on their past donations.
+
+### Files and the database: compensation
+
+An upload touches two systems that cannot share a transaction: disk and PostgreSQL. `UploadDocumentation` therefore:
+
+1. validates every file first (count, size, content type);
+2. writes each file to storage;
+3. inserts all rows in one statement.
+
+If a later file or the insert fails, the files already written are deleted again. When documentation is deleted, the row is removed first and the file second. A failed file removal then leaves an orphaned file, which is harmless, rather than a row that points at nothing.
+
+### Pagination
+
+List endpoints run a `COUNT(*)` with the same filters, then `ORDER BY ... OFFSET ... LIMIT` (limit capped at 100). Every list has an explicit order, so pages are stable. Sort options that come from the client, such as the jamaah list's `sort`, are mapped to fixed `ORDER BY` clauses in the service and never interpolated.
+
+### Known gaps
+
+Two writes still use check-then-act outside a lock, and can misbehave under truly simultaneous requests:
+
+- **Lending an asset.** The service checks that the asset is `GOOD` before the loan transaction starts, and the transaction does not lock or re-check the asset row. Two loans of the same asset at the same moment can both succeed. Returning a loan has the same shape.
+- **Editing a qurban package quota.** The service reads the package, computes the new `stock_remaining`, and writes it as an absolute value without a lock. A booking that commits in between can have its decrement overwritten.
+
+The fix for both is the pattern used by the ledger: lock the row with `FOR UPDATE` inside the repository transaction and re-check the rule there (or express the change as a relative SQL update).
+
+## Startup migration steps
+
+Run by `pkg/database/postgres.go` around `AutoMigrate`; all are idempotent:
+
+1. Create the `pg_trgm` extension.
+2. Drop the old full-table unique indexes on `users.username`, `users.email`, `assets.sku` and `qurban_animals.tag_number` if they are not yet partial, so `AutoMigrate` can recreate them with `WHERE deleted_at IS NULL`.
+3. Run `AutoMigrate` for every model.
+4. Copy legacy transaction descriptions from `metadata->>'description'` into the `description` column where it is empty.
