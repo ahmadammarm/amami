@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { Permission } from '../lib/permissions';
+import { classifyServiceError, MAINTENANCE_ROUTE } from '../lib/serviceStatus';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -9,6 +10,8 @@ declare module 'vue-router' {
     guest?: boolean;
     /** Permission code the user's role must hold to open the route. */
     permission?: Permission;
+    /** Status pages (maintenance) that must render without contacting the server. */
+    standalone?: boolean;
   }
 }
 
@@ -29,6 +32,12 @@ const routes: RouteRecordRaw[] = [
     path: '/forbidden',
     name: 'Forbidden',
     component: () => import('../components/pages/ForbiddenPage.vue'),
+  },
+  {
+    path: '/pemeliharaan',
+    name: MAINTENANCE_ROUTE,
+    component: () => import('../components/pages/MaintenancePage.vue'),
+    meta: { standalone: true },
   },
   {
     path: '/',
@@ -96,6 +105,12 @@ const routes: RouteRecordRaw[] = [
     ],
     meta: { requiresAuth: true },
   },
+  {
+    // Must stay last: anything no other route matched.
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('../components/pages/NotFoundPage.vue'),
+  },
 ];
 
 const router = createRouter({
@@ -104,16 +119,23 @@ const router = createRouter({
 });
 
 router.beforeEach(async (to, _from, next) => {
+  // Status pages render without the session check, or an outage would loop.
+  if (to.meta.standalone) return next();
+
   const authStore = useAuthStore();
 
   // A stale token is dropped (fetchUser logs out on failure) and navigation
   // continues as a guest: public pages stay open, protected ones fall through
-  // to the requiresAuth check below.
+  // to the requiresAuth check below. If the server is unreachable instead, the
+  // session is kept and the user is told why nothing loads.
   if (authStore.token && !authStore.user) {
     try {
       await authStore.fetchUser();
-    } catch {
-      // handled by fetchUser
+    } catch (error) {
+      const issue = classifyServiceError(error);
+      if (issue) {
+        return next({ name: MAINTENANCE_ROUTE, query: { alasan: issue, kembali: to.fullPath } });
+      }
     }
   }
 

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import type { LoginResponse, User } from '../types/auth';
 import type { Permission } from '../lib/permissions';
 import { request } from '../api/client';
+import { classifyServiceError } from '../lib/serviceStatus';
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null);
@@ -32,7 +33,8 @@ export const useAuthStore = defineStore('auth', () => {
         localStorage.setItem('requiresPasswordChange', 'true');
       }
     } catch (error) {
-      logout();
+      // Keep the session through an outage; only a rejected session signs out.
+      if (!classifyServiceError(error)) logout();
       throw error;
     }
   }
