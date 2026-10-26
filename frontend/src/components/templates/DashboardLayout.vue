@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../../stores/auth';
+import { Permission } from '../../lib/permissions';
 import AppSidebar from '../organisms/AppSidebar.vue';
 import { Menu, X, LogOut, Settings as SettingsIcon, ChevronDown } from 'lucide-vue-next';
 import {
@@ -48,23 +49,21 @@ const userInitials = computed(() => {
   return authStore.user?.username?.charAt(0).toUpperCase() || 'U';
 });
 
-const canViewSettings = computed(() => {
-  return ['SUPER_ADMIN', 'SEKRETARIS'].includes(authStore.userRole || '');
-});
+const canViewSettings = computed(() => authStore.can(Permission.SettingsManage));
 
 </script>
 
 <template>
   <div class="flex h-screen bg-gray-50/50 font-sans overflow-hidden">
     <!-- Mobile Backdrop -->
-    <div 
-      v-if="isSidebarOpen" 
+    <div
+      v-if="isSidebarOpen"
       class="fixed inset-0 bg-black/40 z-40 lg:hidden transition-opacity duration-300"
       @click="closeSidebar"
     ></div>
 
     <!-- Sticky Sidebar -->
-    <div 
+    <div
       class="fixed inset-y-0 left-0 z-50 transform lg:sticky lg:translate-x-0 transition-transform duration-300 ease-in-out h-full"
       :class="[isSidebarOpen ? 'translate-x-0' : '-translate-x-full']"
     >
@@ -75,18 +74,18 @@ const canViewSettings = computed(() => {
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden h-full">
       <!-- Top Header -->
       <header class="sticky top-0 z-30 flex items-center justify-between lg:justify-end px-4 py-3 bg-white border-b border-gray-100 shadow-sm min-h-[64px]">
-        
+
         <!-- Mobile Logo & Menu Toggle (Left) -->
         <div class="lg:hidden flex items-center gap-3">
-          <button 
-            @click="toggleSidebar" 
+          <button
+            @click="toggleSidebar"
             class="p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 rounded-lg transition-colors"
             aria-label="Toggle Menu"
           >
             <Menu v-if="!isSidebarOpen" class="w-5 h-5" />
             <X v-else class="w-5 h-5" />
           </button>
-          
+
           <h1 class="text-xl font-bold text-primary">amami</h1>
         </div>
 
@@ -104,7 +103,7 @@ const canViewSettings = computed(() => {
                 <ChevronDown class="w-3 h-3 text-gray-400 hidden sm:block" />
               </button>
             </DropdownMenuTrigger>
-            
+
             <DropdownMenuContent align="end" class="w-56 rounded-xl p-2 shadow-xl border-gray-100">
               <DropdownMenuLabel class="font-normal px-2 py-2">
                 <div class="flex flex-col space-y-1">
@@ -116,17 +115,17 @@ const canViewSettings = computed(() => {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator class="bg-gray-100 my-1" />
-              
-              <DropdownMenuItem 
+
+              <DropdownMenuItem
                 v-if="canViewSettings"
-                @click="router.push('/settings')" 
+                @click="router.push({ name: 'Settings' })"
                 class="rounded-lg font-bold text-xs py-2.5 cursor-pointer text-gray-600 hover:text-gray-900 hover:bg-gray-50"
               >
                 <SettingsIcon class="w-4 h-4 mr-2" /> System Settings
               </DropdownMenuItem>
-              
-              <DropdownMenuItem 
-                @click="isLogoutDialogOpen = true" 
+
+              <DropdownMenuItem
+                @click="isLogoutDialogOpen = true"
                 class="rounded-lg font-bold text-xs py-2.5 cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700 mt-1"
               >
                 <LogOut class="w-4 h-4 mr-2" /> Sign out
@@ -153,7 +152,7 @@ const canViewSettings = computed(() => {
         </AlertDialogHeader>
         <AlertDialogFooter class="sm:justify-end gap-2 pt-2 border-t border-gray-50 mt-4">
           <AlertDialogCancel class="rounded-xl h-10 mt-0 font-bold border-gray-200">Cancel</AlertDialogCancel>
-          <AlertDialogAction 
+          <AlertDialogAction
             @click="handleLogout"
             class="rounded-xl h-10 bg-red-500 hover:bg-red-600 focus:ring-red-500 font-bold border-none"
           >

@@ -1,33 +1,38 @@
+import type { ISODateString } from './api';
+
 export interface Jamaah {
   id: string;
-  user_id?: string;
+  user_id: string | null;
   full_name: string;
   phone: string;
   address: string;
   is_mustahik: boolean;
   mustahik_score: number;
-  created_at: string;
-  updated_at: string;
+  created_at: ISODateString;
+  updated_at: ISODateString;
 }
 
-export interface CreateJamaahPayload {
-  full_name: string;
-  phone: string;
-  address: string;
-  is_mustahik: boolean;
-}
+export type HouseStatus = 'OWNED' | 'FAMILY' | 'RENTED' | 'NONE';
 
-export interface UpdateJamaahPayload {
-  full_name: string;
-  phone: string;
-  address: string;
-  is_mustahik: boolean;
-}
+export type JamaahSort = 'newest' | 'score_desc' | 'name_asc';
 
-export interface PaginatedJamaahResponse {
-  data: Jamaah[];
-  total: number;
+export interface JamaahListParams {
   page: number;
   limit: number;
-  total_pages: number;
+  query?: string;
+  mustahik?: boolean;
+  min_score?: number;
+  sort?: JamaahSort;
+}
+
+export interface MustahikSurvey {
+  jamaah_id: string;
+  total_income: number;
+  dependents_count: number;
+  house_status: HouseStatus;
+  has_disability: boolean;
+  criteria_notes: string;
+  mustahik_score: number;
+  surveyed_by: string | null;
+  updated_at: ISODateString;
 }

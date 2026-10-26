@@ -4,10 +4,7 @@ import (
 	inventoryDto "github.com/ahmadammarm/amami/backend/internal/dto/inventory"
 	inventorySvc "github.com/ahmadammarm/amami/backend/internal/service/inventory"
 	"github.com/ahmadammarm/amami/backend/pkg/utils"
-	"net/http"
-
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 type InventoryHandler struct {
@@ -19,93 +16,104 @@ func NewInventoryHandler(svc inventorySvc.InventoryService) *InventoryHandler {
 }
 
 func (h *InventoryHandler) CreateAsset(c *gin.Context) {
-	var req inventoryDto.CreateAssetRequest
+	var req inventoryDto.AssetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.ValidationErrorResponse(c, err)
 		return
 	}
+
 	res, err := h.svc.CreateAsset(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": res})
+	utils.CreatedResponse(c, "Asset created successfully", res)
 }
 
 func (h *InventoryHandler) UpdateAsset(c *gin.Context) {
-	id := c.Param("id")
-	var req inventoryDto.CreateAssetRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	id, err := utils.ParseUUIDParam(c, "id")
+	if err != nil {
+		utils.HandleError(c, err)
 		return
 	}
+
+	var req inventoryDto.AssetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.ValidationErrorResponse(c, err)
+		return
+	}
+
 	res, err := h.svc.UpdateAsset(id, req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": res})
+	utils.SuccessResponse(c, "Asset updated successfully", res)
 }
 
 func (h *InventoryHandler) GetAllAssets(c *gin.Context) {
-	page := utils.ParseQueryInt(c, "page", 1)
-	limit := utils.ParseQueryInt(c, "limit", 20)
+	page, limit := utils.ParsePagination(c)
 
-	assets, total, err := h.svc.GetAllAssets(page, limit)
+	assets, err := h.svc.GetAllAssets(page, limit)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to fetch assets")
+		utils.HandleError(c, err)
 		return
 	}
-	
-	utils.SuccessResponse(c, "Assets fetched successfully", gin.H{
-		"items": assets,
-		"total": total,
-		"page":  page,
-		"limit": limit,
-	})
+	utils.SuccessResponse(c, "Assets fetched successfully", assets)
 }
 
 func (h *InventoryHandler) DeleteAsset(c *gin.Context) {
-	id := c.Param("id")
-	if err := h.svc.DeleteAsset(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	id, err := utils.ParseUUIDParam(c, "id")
+	if err != nil {
+		utils.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+
+	if err := h.svc.DeleteAsset(id); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.SuccessResponse(c, "Asset deleted successfully", nil)
 }
 
 func (h *InventoryHandler) CreateLoan(c *gin.Context) {
-	assetID, err := uuid.Parse(c.Param("id"))
+	assetID, err := utils.ParseUUIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid asset id"})
+		utils.HandleError(c, err)
 		return
 	}
+
 	var req inventoryDto.CreateAssetLoanRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.ValidationErrorResponse(c, err)
 		return
 	}
-	if err := h.svc.CreateLoan(assetID, req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
+	res, err := h.svc.CreateLoan(assetID, req)
+	if err != nil {
+		utils.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"message": "loan created"})
+	utils.CreatedResponse(c, "Loan created successfully", res)
 }
 
 func (h *InventoryHandler) ReturnLoan(c *gin.Context) {
-	loanID, err := uuid.Parse(c.Param("loanId"))
+	loanID, err := utils.ParseUUIDParam(c, "loanId")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid loan id"})
+		utils.HandleError(c, err)
 		return
 	}
+
 	var req inventoryDto.ReturnAssetLoanRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.ValidationErrorResponse(c, err)
 		return
 	}
-	if err := h.svc.ReturnLoan(loanID, req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
+	res, err := h.svc.ReturnLoan(loanID, req)
+	if err != nil {
+		utils.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "loan returned"})
+	utils.SuccessResponse(c, "Loan returned successfully", res)
 }

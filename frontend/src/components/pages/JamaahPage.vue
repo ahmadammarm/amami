@@ -1,100 +1,122 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query';
+import { useForm } from 'vee-validate';
+import { toTypedSchema } from '@vee-validate/zod';
 import { jamaahService } from '@/api/services/jamaah';
+import { getErrorMessage } from '@/api/client';
+import { queryKeys } from '@/api/queryKeys';
 import { useAuthStore } from '@/stores/auth';
-import type { Jamaah, CreateJamaahPayload } from '@/types/jamaah';
+import { Permission } from '@/lib/permissions';
+import { scoreBadgeClass, scoreLevel } from '@/lib/mustahik';
+import { jamaahSchema, type JamaahPayload } from '@/schemas/jamaah';
+import type { Jamaah, JamaahListParams, JamaahSort } from '@/types/jamaah';
+import MustahikSurveyDialog from '@/components/molecules/MustahikSurveyDialog.vue';
 import { toast } from 'vue-sonner';
-import { Users, Search, Plus, Edit2, ShieldAlert } from 'lucide-vue-next';
+import { Users, Search, Plus, Edit2, ShieldAlert, ClipboardList } from 'lucide-vue-next';
 import { RecycleScroller } from 'vue-virtual-scroller';
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 
 const authStore = useAuthStore();
 const queryClient = useQueryClient();
 
-// Pagination & Search State
+// Pagination, Search & Filter State
 const currentPage = ref(1);
 const pageSize = ref(10);
-const searchQuery = ref('');
+const searchInput = ref('');
+const appliedSearch = ref('');
+const mustahikOnly = ref(false);
+const sort = ref<JamaahSort>('newest');
+
+const listParams = computed<JamaahListParams>(() => ({
+  page: currentPage.value,
+  limit: pageSize.value,
+  query: appliedSearch.value || undefined,
+  mustahik: mustahikOnly.value ? true : undefined,
+  sort: sort.value,
+}));
 
 // Fetch Data
 const { data: paginatedData, isLoading } = useQuery({
-  queryKey: ['jamaahs', currentPage, pageSize, searchQuery],
-  queryFn: () => jamaahService.getJamaahs(currentPage.value, pageSize.value, searchQuery.value),
+  queryKey: computed(() => queryKeys.jamaah.list(listParams.value)),
+  queryFn: () => jamaahService.getJamaahs(listParams.value),
   placeholderData: (prev) => prev,
 });
 
-const jamaahs = computed(() => paginatedData.value?.data || []);
-const totalRecords = computed(() => paginatedData.value?.total || 0);
+const jamaahs = computed(() => paginatedData.value?.items ?? []);
+const totalRecords = computed(() => paginatedData.value?.total ?? 0);
 const totalPages = computed(() => paginatedData.value?.total_pages || 1);
 
 // Permissions
-const canManage = computed(() => {
-  return authStore.userRole ? ['SUPER_ADMIN', 'SEKRETARIS', 'TAKMIR'].includes(authStore.userRole) : false;
-});
+const canManage = computed(() => authStore.can(Permission.JamaahManage));
+const canSurvey = computed(() => authStore.can(Permission.MustahikSurvey));
+const showActions = computed(() => canManage.value || canSurvey.value);
 
 // Form State
 const showDialog = ref(false);
 const editingId = ref<string | null>(null);
-const formState = ref<CreateJamaahPayload>({
-  full_name: '',
-  phone: '',
-  address: '',
-  is_mustahik: false,
+const surveyTarget = ref<Jamaah | null>(null);
+const emptyForm: JamaahPayload = { full_name: '', phone: '', address: '', is_mustahik: false };
+
+const { handleSubmit, errors, defineField, resetForm } = useForm({
+  validationSchema: toTypedSchema(jamaahSchema),
+  initialValues: emptyForm,
 });
+
+const [fullName] = defineField('full_name');
+const [phone] = defineField('phone');
+const [address] = defineField('address');
+const [isMustahik] = defineField('is_mustahik');
 
 const openCreateDialog = () => {
   editingId.value = null;
-  formState.value = { full_name: '', phone: '', address: '', is_mustahik: false };
+  resetForm({ values: emptyForm });
   showDialog.value = true;
 };
 
 const openEditDialog = (j: Jamaah) => {
   editingId.value = j.id;
-  formState.value = { 
-    full_name: j.full_name, 
-    phone: j.phone, 
-    address: j.address, 
-    is_mustahik: j.is_mustahik 
-  };
+  resetForm({
+    values: { full_name: j.full_name, phone: j.phone, address: j.address, is_mustahik: j.is_mustahik },
+  });
   showDialog.value = true;
+};
+
+const onSaved = (message: string) => {
+  toast.success(message);
+  queryClient.invalidateQueries({ queryKey: queryKeys.jamaah.all });
+  showDialog.value = false;
 };
 
 // Mutations
 const createMutation = useMutation({
   mutationFn: jamaahService.createJamaah,
-  onSuccess: () => {
-    toast.success('Jamaah registered successfully!');
-    queryClient.invalidateQueries({ queryKey: ['jamaahs'] });
-    showDialog.value = false;
-  },
-  onError: () => toast.error('Failed to register jamaah'),
+  onSuccess: () => onSaved('Jamaah registered successfully!'),
+  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Failed to register jamaah')),
 });
 
 const updateMutation = useMutation({
-  mutationFn: (payload: { id: string; data: CreateJamaahPayload }) => jamaahService.updateJamaah(payload.id, payload.data),
-  onSuccess: () => {
-    toast.success('Jamaah updated successfully!');
-    queryClient.invalidateQueries({ queryKey: ['jamaahs'] });
-    showDialog.value = false;
-  },
-  onError: () => toast.error('Failed to update jamaah'),
+  mutationFn: (payload: { id: string; data: JamaahPayload }) => jamaahService.updateJamaah(payload.id, payload.data),
+  onSuccess: () => onSaved('Jamaah updated successfully!'),
+  onError: (error: unknown) => toast.error(getErrorMessage(error, 'Failed to update jamaah')),
 });
 
-const submitForm = () => {
-  if (!formState.value.full_name) {
-    toast.error('Full name is required');
-    return;
-  }
-  
+const isSaving = computed(() => createMutation.isPending.value || updateMutation.isPending.value);
+
+const submitForm = handleSubmit((values) => {
   if (editingId.value) {
-    updateMutation.mutate({ id: editingId.value, data: formState.value });
+    updateMutation.mutate({ id: editingId.value, data: values });
   } else {
-    createMutation.mutate(formState.value);
+    createMutation.mutate(values);
   }
-};
+});
 
 const handleSearch = () => {
+  appliedSearch.value = searchInput.value.trim();
+  currentPage.value = 1;
+};
+
+const resetToFirstPage = () => {
   currentPage.value = 1;
 };
 </script>
@@ -109,7 +131,7 @@ const handleSearch = () => {
         </div>
         <div>
           <h1 class="text-2xl font-bold tracking-tight text-gray-900">Database Jamaah</h1>
-          <p class="text-sm text-gray-500">Kelola registrasi warga dan status Mustahik.</p>
+          <p class="text-sm text-gray-500">Kelola registrasi warga, status Mustahik, dan skor kemiskinan.</p>
         </div>
       </div>
       <button
@@ -121,42 +143,54 @@ const handleSearch = () => {
       </button>
     </div>
 
-    <!-- Search Bar -->
-    <div class="flex items-center bg-white p-2 rounded-xl shadow-sm border border-gray-100 max-w-md">
-      <Search class="w-5 h-5 text-gray-400 ml-2" />
-      <input 
-        v-model="searchQuery"
-        @keyup.enter="handleSearch"
-        type="text" 
-        placeholder="Cari nama jamaah..." 
-        class="flex-1 border-0 focus:ring-0 text-sm p-2 w-full"
-      />
-      <button @click="handleSearch" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
-        Cari
-      </button>
+    <!-- Search & Filters -->
+    <div class="flex flex-col md:flex-row md:items-center gap-3">
+      <div class="flex items-center bg-white p-2 rounded-xl shadow-sm border border-gray-100 max-w-md flex-1">
+        <Search class="w-5 h-5 text-gray-400 ml-2" />
+        <input
+          v-model="searchInput"
+          @keyup.enter="handleSearch"
+          type="text"
+          placeholder="Cari nama jamaah..."
+          class="flex-1 border-0 focus:ring-0 text-sm p-2 w-full"
+        />
+        <button @click="handleSearch" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
+          Cari
+        </button>
+      </div>
+      <label class="inline-flex items-center gap-2 bg-white px-3 py-2 rounded-xl shadow-sm border border-gray-100 text-sm text-gray-700">
+        <input type="checkbox" v-model="mustahikOnly" @change="resetToFirstPage" class="h-4 w-4 rounded border-gray-300" />
+        Hanya Mustahik
+      </label>
+      <select v-model="sort" @change="resetToFirstPage" class="bg-white px-3 py-2 rounded-xl shadow-sm border border-gray-100 text-sm text-gray-700">
+        <option value="newest">Terbaru</option>
+        <option value="score_desc">Skor tertinggi</option>
+        <option value="name_asc">Nama (A-Z)</option>
+      </select>
     </div>
 
     <!-- Table / Virtual Scroller -->
     <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col h-[600px]">
       <div class="overflow-x-auto flex-1 flex flex-col relative">
-        <div class="flex items-center text-xs text-gray-700 uppercase bg-gray-50 border-b min-w-[800px]">
+        <div class="flex items-center text-xs text-gray-700 uppercase bg-gray-50 border-b min-w-[900px]">
           <div class="px-6 py-4 flex-[2]">Nama Lengkap</div>
           <div class="px-6 py-4 flex-1">No. HP</div>
           <div class="px-6 py-4 flex-[2]">Alamat</div>
           <div class="px-6 py-4 flex-1">Status Zakat</div>
-          <div v-if="canManage" class="px-6 py-4 w-24 text-right">Aksi</div>
+          <div class="px-6 py-4 w-28">Skor</div>
+          <div v-if="showActions" class="px-6 py-4 w-28 text-right">Aksi</div>
         </div>
-        
-        <div v-if="isLoading" class="p-8 text-center text-gray-500 border-b min-w-[800px]">
+
+        <div v-if="isLoading" class="p-8 text-center text-gray-500 border-b min-w-[900px]">
           Memuat data jamaah...
         </div>
-        <div v-else-if="jamaahs.length === 0" class="p-8 text-center text-gray-500 border-b min-w-[800px]">
+        <div v-else-if="jamaahs.length === 0" class="p-8 text-center text-gray-500 border-b min-w-[900px]">
           Tidak ada jamaah ditemukan.
         </div>
-        
+
         <RecycleScroller
           v-else
-          class="flex-1 h-full overflow-y-auto min-w-[800px]"
+          class="flex-1 h-full overflow-y-auto min-w-[900px]"
           :items="jamaahs"
           :item-size="65"
           key-field="id"
@@ -174,8 +208,16 @@ const handleSearch = () => {
                   Umum (Muzakki)
                 </span>
             </div>
-            <div v-if="canManage" class="px-6 w-24 text-right">
-                <button @click="openEditDialog(j)" class="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 p-2 rounded-lg transition-colors">
+            <div class="px-6 w-28">
+              <span :class="['px-2 py-1 rounded-full text-xs font-semibold', scoreBadgeClass[scoreLevel(j.mustahik_score)]]">
+                {{ j.mustahik_score.toFixed(1) }}
+              </span>
+            </div>
+            <div v-if="showActions" class="px-6 w-28 flex justify-end gap-2">
+                <button v-if="canSurvey" @click="surveyTarget = j" title="Survei Mustahik" class="text-purple-600 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 p-2 rounded-lg transition-colors">
+                  <ClipboardList class="w-4 h-4" />
+                </button>
+                <button v-if="canManage" @click="openEditDialog(j)" title="Edit" class="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 p-2 rounded-lg transition-colors">
                   <Edit2 class="w-4 h-4" />
                 </button>
             </div>
@@ -185,8 +227,8 @@ const handleSearch = () => {
       <!-- Pagination Controls -->
       <div class="px-6 py-4 border-t flex items-center justify-between text-sm text-gray-500 bg-gray-50">
         <div>
-          Menampilkan <span class="font-medium">{{ totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1 }}</span> s/d 
-          <span class="font-medium">{{ Math.min(currentPage * pageSize, totalRecords) }}</span> dari 
+          Menampilkan <span class="font-medium">{{ totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1 }}</span> s/d
+          <span class="font-medium">{{ Math.min(currentPage * pageSize, totalRecords) }}</span> dari
           <span class="font-medium">{{ totalRecords }}</span> jamaah
         </div>
         <div class="flex space-x-2">
@@ -197,6 +239,9 @@ const handleSearch = () => {
     </div>
   </div>
 
+  <!-- Mustahik Survey Dialog -->
+  <MustahikSurveyDialog v-if="surveyTarget" :jamaah="surveyTarget" @close="surveyTarget = null" />
+
   <!-- Dialog Form -->
   <div v-if="showDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -204,22 +249,25 @@ const handleSearch = () => {
         <h3 class="text-lg font-bold text-gray-900">{{ editingId ? 'Edit Data Jamaah' : 'Register Jamaah Baru' }}</h3>
         <button @click="showDialog = false" class="text-gray-400 hover:text-gray-600 rounded-full p-1 hover:bg-gray-200 transition-colors">&times;</button>
       </div>
-      <form @submit.prevent="submitForm">
+      <form @submit="submitForm" novalidate>
         <div class="p-6 space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap <span class="text-red-500">*</span></label>
-            <input type="text" v-model="formState.full_name" required class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5 border" placeholder="Cth: Ahmad Abdullah" />
+            <input type="text" v-model="fullName" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5 border" placeholder="Cth: Ahmad Abdullah" />
+            <p v-if="errors.full_name" class="mt-1 text-xs text-red-600">{{ errors.full_name }}</p>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Nomor HP / WhatsApp</label>
-            <input type="text" v-model="formState.phone" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5 border" placeholder="Cth: 08123456789" />
+            <input type="text" v-model="phone" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5 border" placeholder="Cth: 08123456789" />
+            <p v-if="errors.phone" class="mt-1 text-xs text-red-600">{{ errors.phone }}</p>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Alamat Domisili</label>
-            <textarea v-model="formState.address" rows="3" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5 border" placeholder="Jalan, RT/RW, Kelurahan..."></textarea>
+            <textarea v-model="address" rows="3" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5 border" placeholder="Jalan, RT/RW, Kelurahan..."></textarea>
+            <p v-if="errors.address" class="mt-1 text-xs text-red-600">{{ errors.address }}</p>
           </div>
           <div class="flex items-center mt-4 p-3 bg-purple-50 rounded-lg border border-purple-100">
-            <input id="mustahik" type="checkbox" v-model="formState.is_mustahik" class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded" />
+            <input id="mustahik" type="checkbox" v-model="isMustahik" class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded" />
             <label for="mustahik" class="ml-3 block text-sm font-medium text-purple-900">
               Tandai sebagai Mustahik (Penerima Zakat)
             </label>
@@ -229,8 +277,8 @@ const handleSearch = () => {
           <button type="button" @click="showDialog = false" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
             Batal
           </button>
-          <button type="submit" :disabled="createMutation.isPending.value || updateMutation.isPending.value" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm flex items-center">
-            <span v-if="createMutation.isPending.value || updateMutation.isPending.value" class="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+          <button type="submit" :disabled="isSaving" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm flex items-center">
+            <span v-if="isSaving" class="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
             Simpan Data
           </button>
         </div>

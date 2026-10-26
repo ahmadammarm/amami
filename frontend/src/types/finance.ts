@@ -1,3 +1,7 @@
+import type { ISODateString } from './api';
+
+export type TransactionType = 'CREDIT' | 'DEBIT';
+
 export interface Fund {
   id: number;
   name: string;
@@ -8,32 +12,15 @@ export interface Fund {
 export interface Transaction {
   id: string;
   fund_id: number;
-  type: 'CREDIT' | 'DEBIT';
+  type: TransactionType;
   amount: number;
   category: string;
-  reference_id?: string;
+  description: string;
+  reference_id: string | null;
+  /** Set when this entry reverses another transaction. */
+  reversal_of_id: string | null;
+  /** Set when another entry has reversed this transaction. */
+  reversed_by_id: string | null;
   created_by: string;
-  created_at: string;
-}
-
-export interface CreateFundPayload {
-  name: string;
-  code: string;
-}
-
-export interface CreateTransactionPayload {
-  fund_id: number;
-  type: 'CREDIT' | 'DEBIT';
-  amount: number;
-  category: string;
-  description?: string;
-  reference_id?: string;
-}
-
-export interface PaginatedTransactionResponse {
-  data: Transaction[];
-  total: number;
-  page: number;
-  limit: number;
-  total_pages: number;
+  created_at: ISODateString;
 }

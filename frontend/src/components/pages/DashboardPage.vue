@@ -1,18 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import VueApexCharts from 'vue3-apexcharts';
+import type { ApexOptions } from 'apexcharts';
 import { useAuthStore } from '@/stores/auth';
 import {
   Wallet,
   Users,
-  Activity,
   Package,
   BookOpen,
   HeartHandshake,
   TrendingUp,
   AlertTriangle,
-  Server,
-  FileText,
   ArrowUpRight,
   ArrowDownRight,
   CalendarDays,
@@ -20,6 +18,7 @@ import {
 } from 'lucide-vue-next';
 import { useQuery } from '@tanstack/vue-query';
 import { dashboardService } from '@/api/services/dashboard';
+import { queryKeys } from '@/api/queryKeys';
 import type { MonthlyFinancialPoint, MonthlyJamaahPoint } from '@/types/dashboard';
 
 const authStore = useAuthStore();
@@ -27,7 +26,7 @@ const role = computed(() => authStore.userRole);
 const userName = computed(() => authStore.user?.full_name || authStore.user?.username || 'Admin');
 
 const { data: metrics, isLoading } = useQuery({
-  queryKey: ['dashboard-metrics'],
+  queryKey: queryKeys.dashboard.metrics,
   queryFn: dashboardService.getMetrics,
   refetchInterval: 60000,
 });
@@ -61,7 +60,7 @@ const financeAreaSeries = computed(() => {
     { name: 'Pengeluaran', data: data.map((d: MonthlyFinancialPoint) => d.expense) },
   ];
 });
-const financeAreaOptions = computed(() => ({
+const financeAreaOptions = computed<ApexOptions>(() => ({
   chart: {
     type: 'area',
     toolbar: { show: false },
@@ -103,7 +102,7 @@ const zakatRadialSeries = computed(() => {
   if (donated === 0) return [0];
   return [Math.min(Math.round((distributed / donated) * 100), 100)];
 });
-const zakatRadialOptions = computed(() => ({
+const zakatRadialOptions = computed<ApexOptions>(() => ({
   chart: { type: 'radialBar', fontFamily: 'inherit' },
   colors: ['#3b82f6'],
   plotOptions: {
@@ -125,14 +124,21 @@ const qurbanDonutSeries = computed(() => [
   metrics.value?.analytics?.qurban_breakdown?.kambing ?? 0,
   metrics.value?.analytics?.qurban_breakdown?.domba ?? 0,
 ]);
-const qurbanDonutOptions = computed(() => ({
+const QURBAN_LABELS = ['Sapi', 'Kambing', 'Domba'];
+const qurbanDonutOptions = computed<ApexOptions>(() => ({
   chart: { type: 'donut', fontFamily: 'inherit', animations: { enabled: true } },
-  labels: ['Sapi', 'Kambing', 'Domba'],
+  labels: QURBAN_LABELS,
   colors: ['#f97316', '#f59e0b', '#84cc16'],
-  dataLabels: { enabled: true, formatter: (_v: number, opts: { seriesIndex: number; w: { config: { labels: string[] }; globals: { series: number[] } } }) => `${opts.w.config.labels[opts.seriesIndex]}: ${opts.w.globals.series[opts.seriesIndex]}` },
+  dataLabels: {
+    enabled: true,
+    formatter: (_value, opts?: { seriesIndex: number }) => {
+      const i = opts?.seriesIndex ?? 0;
+      return `${QURBAN_LABELS[i]}: ${qurbanDonutSeries.value[i] ?? 0}`;
+    },
+  },
   legend: { position: 'bottom', fontSize: '13px' },
   stroke: { width: 2, colors: ['#ffffff'] },
-  plotOptions: { pie: { donut: { size: '62%', labels: { show: true, total: { show: true, label: 'Total Hewan', color: '#6b7280', formatter: (w: { globals: { seriesTotals: number[] } }) => w.globals.seriesTotals.reduce((a: number, b: number) => a + b, 0).toString() } } } } },
+  plotOptions: { pie: { donut: { size: '62%', labels: { show: true, total: { show: true, label: 'Total Hewan', color: '#6b7280', formatter: () => String(qurbanDonutSeries.value.reduce((a, b) => a + b, 0)) } } } } },
   tooltip: { y: { formatter: (v: number) => `${v} ekor` } },
 }));
 
@@ -146,7 +152,7 @@ const assetBarSeries = computed(() => [{
     metrics.value?.analytics?.asset_breakdown?.broken ?? 0,
   ],
 }]);
-const assetBarOptions = computed(() => ({
+const assetBarOptions = computed<ApexOptions>(() => ({
   chart: { type: 'bar', toolbar: { show: false }, fontFamily: 'inherit', animations: { enabled: true } },
   colors: ['#10b981', '#f59e0b', '#f97316', '#f43f5e'],
   plotOptions: {
@@ -177,7 +183,7 @@ const jamaahBarSeries = computed(() => [{
   name: 'Jamaah Baru',
   data: (metrics.value?.analytics?.jamaah_growth ?? []).map((d: MonthlyJamaahPoint) => d.new_members),
 }]);
-const jamaahBarOptions = computed(() => ({
+const jamaahBarOptions = computed<ApexOptions>(() => ({
   chart: { type: 'bar', toolbar: { show: false }, fontFamily: 'inherit' },
   colors: ['#6366f1'],
   plotOptions: {

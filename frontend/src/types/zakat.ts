@@ -1,55 +1,27 @@
-export interface CollectZakatPayload {
-  muzakki_id: string;
-  zakat_type: string;
-  fund_id?: number;
-  amount: number;
-  unit: string;
-  description: string;
-}
+import type { ISODateString } from './api';
 
-export interface DistributeZakatPayload {
-  mustahik_id: string;
-  fund_id?: number;
-  amount: number;
-  unit: string;
-  description: string;
-}
+export type ZakatType = 'FITRAH_BERAS' | 'MAAL' | 'INFAQ';
+export type ZakatUnit = 'IDR' | 'KG' | 'LITER';
 
 export interface ZakatDonation {
   id: string;
-  transaction_id?: string;
+  transaction_id: string | null;
   muzakki_id: string;
   muzakki_name: string;
   zakat_type: string;
   amount: number;
-  unit: string;
+  unit: ZakatUnit;
   description: string;
-  created_at: string;
+  created_at: ISODateString;
 }
 
 export interface ZakatDistribution {
   id: string;
-  transaction_id?: string;
+  transaction_id: string | null;
   mustahik_id: string;
   mustahik_name: string;
   amount: number;
-  unit: string;
+  unit: ZakatUnit;
   description: string;
-  distributed_at: string;
-}
-
-export interface PaginatedDonationResponse {
-  data: ZakatDonation[];
-  total: number;
-  page: number;
-  limit: number;
-  total_pages: number;
-}
-
-export interface PaginatedDistributionResponse {
-  data: ZakatDistribution[];
-  total: number;
-  page: number;
-  limit: number;
-  total_pages: number;
+  distributed_at: ISODateString;
 }

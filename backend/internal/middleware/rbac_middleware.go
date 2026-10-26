@@ -1,41 +1,44 @@
 package middleware
 
 import (
-	"github.com/ahmadammarm/amami/backend/internal/repository/auth"
+	"net/http"
+
+	"github.com/ahmadammarm/amami/backend/internal/domain"
 	"github.com/ahmadammarm/amami/backend/pkg/utils"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
-func RequirePermission(roleRepo auth.RoleRepository, code string) gin.HandlerFunc {
+// PermissionFinder is the subset of auth.RoleRepository the RBAC middleware needs.
+type PermissionFinder interface {
+	FindPermissionsByRoleID(roleID uint) ([]domain.Permission, error)
+}
+
+func RequirePermission(finder PermissionFinder, code domain.PermissionCode) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		roleID, exists := c.Get("role_id")
-		if !exists {
-			utils.ErrorResponse(c, 401, "Role ID not found in context")
-			c.Abort()
-			return
-		}
-
-		permissions, err := roleRepo.FindPermissionsByRoleID(roleID.(uint))
+		roleID, err := utils.CurrentRoleID(c)
 		if err != nil {
-			utils.ErrorResponse(c, 500, "Failed to fetch permissions")
+			utils.ErrorResponse(c, http.StatusUnauthorized, "Role ID not found in context")
 			c.Abort()
 			return
 		}
 
-		hasPermission := false
+		permissions, err := finder.FindPermissionsByRoleID(roleID)
+		if err != nil {
+			zap.L().Error("failed to fetch permissions", zap.Uint("role_id", roleID), zap.Error(err))
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to fetch permissions")
+			c.Abort()
+			return
+		}
+
 		for _, p := range permissions {
-			if p.Code == code {
-				hasPermission = true
-				break
+			if p.Code == string(code) {
+				c.Next()
+				return
 			}
 		}
 
-		if !hasPermission {
-			utils.ErrorResponse(c, 403, "Permission denied")
-			c.Abort()
-			return
-		}
-
-		c.Next()
+		utils.ErrorResponse(c, http.StatusForbidden, "Permission denied")
+		c.Abort()
 	}
 }

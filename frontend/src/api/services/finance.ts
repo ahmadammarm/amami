@@ -1,24 +1,26 @@
-import apiClient from '../client';
-import type { Fund, Transaction, CreateFundPayload, CreateTransactionPayload, PaginatedTransactionResponse } from '../../types/finance';
+import { request } from '../client';
+import type { Page } from '../../types/api';
+import type { Fund, Transaction } from '../../types/finance';
+import type { CreateFundPayload, CreateTransactionPayload, ReverseTransactionPayload } from '../../schemas/finance';
 
 export const financeService = {
-  async getFunds(): Promise<Fund[]> {
-    const response = await apiClient.get<Fund[]>('/finance/funds');
-    return response.data;
+  getFunds(): Promise<Fund[]> {
+    return request<Fund[]>({ method: 'GET', url: '/finance/funds' });
   },
 
-  async createFund(payload: CreateFundPayload): Promise<Fund> {
-    const response = await apiClient.post<Fund>('/finance/funds', payload);
-    return response.data;
+  createFund(payload: CreateFundPayload): Promise<Fund> {
+    return request<Fund>({ method: 'POST', url: '/finance/funds', data: payload });
   },
 
-  async getTransactions(page: number = 1, limit: number = 10): Promise<PaginatedTransactionResponse> {
-    const response = await apiClient.get<PaginatedTransactionResponse>(`/finance/transactions?page=${page}&limit=${limit}`);
-    return response.data;
+  getTransactions(page = 1, limit = 10): Promise<Page<Transaction>> {
+    return request<Page<Transaction>>({ method: 'GET', url: '/finance/transactions', params: { page, limit } });
   },
 
-  async createTransaction(payload: CreateTransactionPayload): Promise<Transaction> {
-    const response = await apiClient.post<Transaction>('/finance/transactions', payload);
-    return response.data;
-  }
+  createTransaction(payload: CreateTransactionPayload): Promise<Transaction> {
+    return request<Transaction>({ method: 'POST', url: '/finance/transactions', data: payload });
+  },
+
+  reverseTransaction(id: string, payload: ReverseTransactionPayload): Promise<Transaction> {
+    return request<Transaction>({ method: 'POST', url: `/finance/transactions/${id}/reverse`, data: payload });
+  },
 };

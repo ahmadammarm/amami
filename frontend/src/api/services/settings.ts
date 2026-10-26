@@ -1,36 +1,31 @@
-import apiClient from '../client';
+import { request } from '../client';
+import type {
+  AuditLogList,
+  MosqueProfile,
+  MosqueProfilePayload,
+  SMTPConfig,
+  SMTPConfigPayload,
+  SystemHealth,
+  TestSMTPPayload,
+} from '../../types/settings';
 
-export const getMosqueProfile = async () => {
-  const response = await apiClient.get('/settings/profile');
-  return response.data.data;
-};
+export const getMosqueProfile = (): Promise<MosqueProfile> =>
+  request<MosqueProfile>({ method: 'GET', url: '/settings/profile' });
 
-export const updateMosqueProfile = async (data: any) => {
-  const response = await apiClient.put('/settings/profile', data);
-  return response.data;
-};
+export const updateMosqueProfile = (data: MosqueProfilePayload): Promise<void> =>
+  request<void>({ method: 'PUT', url: '/settings/profile', data });
 
-export const getSMTPConfig = async () => {
-  const response = await apiClient.get('/settings/smtp');
-  return response.data.data;
-};
+export const getSMTPConfig = (): Promise<SMTPConfig> =>
+  request<SMTPConfig>({ method: 'GET', url: '/settings/smtp' });
 
-export const updateSMTPConfig = async (data: any) => {
-  const response = await apiClient.put('/settings/smtp', data);
-  return response.data;
-};
+export const updateSMTPConfig = (data: SMTPConfigPayload): Promise<void> =>
+  request<void>({ method: 'PUT', url: '/settings/smtp', data });
 
-export const testSMTPConnection = async (data: any) => {
-  const response = await apiClient.post('/settings/smtp/test', data);
-  return response.data;
-};
+export const testSMTPConnection = (data: TestSMTPPayload): Promise<void> =>
+  request<void>({ method: 'POST', url: '/settings/smtp/test', data });
 
-export const getSystemHealth = async () => {
-  const response = await apiClient.get('/settings/health');
-  return response.data.data;
-};
+export const getSystemHealth = (): Promise<SystemHealth> =>
+  request<SystemHealth>({ method: 'GET', url: '/settings/health' });
 
-export const getAuditLogs = async (page: number = 1, limit: number = 10) => {
-  const response = await apiClient.get('/settings/audit', { params: { page, limit } });
-  return response.data.data;
-};
+export const getAuditLogs = (page = 1, limit = 10): Promise<AuditLogList> =>
+  request<AuditLogList>({ method: 'GET', url: '/settings/audit', params: { page, limit } });

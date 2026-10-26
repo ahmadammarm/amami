@@ -1,18 +1,16 @@
 package user
 
 import (
-	"net/http"
-
 	"github.com/ahmadammarm/amami/backend/internal/dto/user"
 	userSvc "github.com/ahmadammarm/amami/backend/internal/service/user"
 	"github.com/ahmadammarm/amami/backend/pkg/utils"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 type UserMgmtHandler interface {
 	InviteUser(c *gin.Context)
 	GetAllUsers(c *gin.Context)
+	GetRoles(c *gin.Context)
 	UpdateUserStatus(c *gin.Context)
 	DeleteUser(c *gin.Context)
 }
@@ -32,42 +30,41 @@ func (h *userMgmtHandler) InviteUser(c *gin.Context) {
 		return
 	}
 
-	userRes, tempPass, err := h.svc.InviteUser(req)
+	res, err := h.svc.InviteUser(req)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
-	// For now, we return the temp password in the response until SMTP is ready
-	utils.SuccessResponse(c, "User invited successfully", gin.H{
-		"user":              userRes,
-		"temporary_password": tempPass,
-	})
+	utils.CreatedResponse(c, "User invited successfully", res)
 }
 
 func (h *userMgmtHandler) GetAllUsers(c *gin.Context) {
-	page := utils.ParseQueryInt(c, "page", 1)
-	limit := utils.ParseQueryInt(c, "limit", 20)
+	page, limit := utils.ParsePagination(c)
 
-	users, total, err := h.svc.GetAllUsers(page, limit)
+	users, err := h.svc.GetAllUsers(page, limit)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to fetch users")
+		utils.HandleError(c, err)
 		return
 	}
 
-	utils.SuccessResponse(c, "Users fetched successfully", gin.H{
-		"items": users,
-		"total": total,
-		"page":  page,
-		"limit": limit,
-	})
+	utils.SuccessResponse(c, "Users fetched successfully", users)
+}
+
+func (h *userMgmtHandler) GetRoles(c *gin.Context) {
+	roles, err := h.svc.GetRoles()
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+
+	utils.SuccessResponse(c, "Roles fetched successfully", roles)
 }
 
 func (h *userMgmtHandler) UpdateUserStatus(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := uuid.Parse(idStr)
+	id, err := utils.ParseUUIDParam(c, "id")
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "invalid user id format")
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -78,7 +75,7 @@ func (h *userMgmtHandler) UpdateUserStatus(c *gin.Context) {
 	}
 
 	if err := h.svc.UpdateUserStatus(id, req.Status); err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -86,15 +83,20 @@ func (h *userMgmtHandler) UpdateUserStatus(c *gin.Context) {
 }
 
 func (h *userMgmtHandler) DeleteUser(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := uuid.Parse(idStr)
+	actorID, err := utils.CurrentUserID(c)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "invalid user id format")
+		utils.HandleError(c, err)
 		return
 	}
 
-	if err := h.svc.DeleteUser(id); err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, err.Error())
+	id, err := utils.ParseUUIDParam(c, "id")
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+
+	if err := h.svc.DeleteUser(actorID, id); err != nil {
+		utils.HandleError(c, err)
 		return
 	}
 

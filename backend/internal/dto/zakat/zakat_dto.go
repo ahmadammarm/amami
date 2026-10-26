@@ -1,61 +1,75 @@
 package zakat
 
 import (
+	"time"
+
+	"github.com/ahmadammarm/amami/backend/internal/domain"
 	"github.com/google/uuid"
 )
 
 type CollectZakatRequest struct {
-	MuzakkiID   uuid.UUID `json:"muzakki_id" binding:"required"`
-	ZakatType   string    `json:"zakat_type" binding:"required,oneof=FITRAH_BERAS MAAL INFAQ"` // "FITRAH_BERAS", "MAAL", "INFAQ"
-	FundID      *uint     `json:"fund_id"` // Nullable for non-cash
-	AmountOrQty float64   `json:"amount" binding:"required,gt=0"`
-	Unit        string    `json:"unit" binding:"required"` // "IDR", "KG", "LITER"
-	Description string    `json:"description"`
+	MuzakkiID   uuid.UUID        `json:"muzakki_id" binding:"required"`
+	ZakatType   string           `json:"zakat_type" binding:"required,oneof=FITRAH_BERAS MAAL INFAQ"`
+	FundID      *uint            `json:"fund_id"` // set only for cash donations posted to the ledger
+	AmountOrQty float64          `json:"amount" binding:"required,gt=0"`
+	Unit        domain.ZakatUnit `json:"unit" binding:"required,oneof=IDR KG LITER"`
+	Description string           `json:"description" binding:"max=1000"`
 }
 
 type DistributeZakatRequest struct {
-	MustahikID  uuid.UUID `json:"mustahik_id" binding:"required"`
-	FundID      *uint     `json:"fund_id"` // Nullable for non-cash
-	AmountOrQty float64   `json:"amount" binding:"required,gt=0"`
-	Unit        string    `json:"unit" binding:"required"`
-	Description string    `json:"description"`
+	MustahikID  uuid.UUID        `json:"mustahik_id" binding:"required"`
+	FundID      *uint            `json:"fund_id"` // set only for cash distributions posted to the ledger
+	AmountOrQty float64          `json:"amount" binding:"required,gt=0"`
+	Unit        domain.ZakatUnit `json:"unit" binding:"required,oneof=IDR KG LITER"`
+	Description string           `json:"description" binding:"max=1000"`
 }
 
 type ZakatDonationResponse struct {
-	ID            uuid.UUID  `json:"id"`
-	TransactionID *uuid.UUID `json:"transaction_id,omitempty"`
-	MuzakkiID     uuid.UUID  `json:"muzakki_id"`
-	MuzakkiName   string     `json:"muzakki_name"`
-	ZakatType     string     `json:"zakat_type"`
-	Amount        float64    `json:"amount"`
-	Unit          string     `json:"unit"`
-	Description   string     `json:"description"`
-	CreatedAt     string     `json:"created_at"`
+	ID            uuid.UUID        `json:"id"`
+	TransactionID *uuid.UUID       `json:"transaction_id"`
+	MuzakkiID     uuid.UUID        `json:"muzakki_id"`
+	MuzakkiName   string           `json:"muzakki_name"`
+	ZakatType     string           `json:"zakat_type"`
+	Amount        float64          `json:"amount"`
+	Unit          domain.ZakatUnit `json:"unit"`
+	Description   string           `json:"description"`
+	CreatedAt     time.Time        `json:"created_at"`
 }
 
 type ZakatDistributionResponse struct {
-	ID            uuid.UUID  `json:"id"`
-	TransactionID *uuid.UUID `json:"transaction_id,omitempty"`
-	MustahikID    uuid.UUID  `json:"mustahik_id"`
-	MustahikName  string     `json:"mustahik_name"`
-	Amount        float64    `json:"amount"`
-	Unit          string     `json:"unit"`
-	Description   string     `json:"description"`
-	DistributedAt string     `json:"distributed_at"`
+	ID            uuid.UUID        `json:"id"`
+	TransactionID *uuid.UUID       `json:"transaction_id"`
+	MustahikID    uuid.UUID        `json:"mustahik_id"`
+	MustahikName  string           `json:"mustahik_name"`
+	Amount        float64          `json:"amount"`
+	Unit          domain.ZakatUnit `json:"unit"`
+	Description   string           `json:"description"`
+	DistributedAt time.Time        `json:"distributed_at"`
 }
 
-type PaginatedDonationResponse struct {
-	Data       []ZakatDonationResponse `json:"data"`
-	Total      int64                   `json:"total"`
-	Page       int                     `json:"page"`
-	Limit      int                     `json:"limit"`
-	TotalPages int                     `json:"total_pages"`
+func ToDonationResponse(d *domain.ZakatDonation) ZakatDonationResponse {
+	return ZakatDonationResponse{
+		ID:            d.ID,
+		TransactionID: d.TransactionID,
+		MuzakkiID:     d.MuzakkiID,
+		MuzakkiName:   d.Muzakki.FullName,
+		ZakatType:     d.ZakatType,
+		Amount:        d.AmountOrQty,
+		Unit:          d.Unit,
+		Description:   d.Description,
+		CreatedAt:     d.CreatedAt,
+	}
 }
 
-type PaginatedDistributionResponse struct {
-	Data       []ZakatDistributionResponse `json:"data"`
-	Total      int64                       `json:"total"`
-	Page       int                         `json:"page"`
-	Limit      int                         `json:"limit"`
-	TotalPages int                         `json:"total_pages"`
+func ToDistributionResponse(d *domain.ZakatDistribution) ZakatDistributionResponse {
+	return ZakatDistributionResponse{
+		ID:            d.ID,
+		TransactionID: d.TransactionID,
+		MustahikID:    d.MustahikID,
+		MustahikName:  d.Mustahik.FullName,
+		Amount:        d.AmountOrQty,
+		Unit:          d.Unit,
+		Description:   d.Description,
+		DistributedAt: d.DistributedAt,
+	}
 }

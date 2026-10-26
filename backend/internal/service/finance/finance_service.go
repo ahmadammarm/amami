@@ -6,14 +6,18 @@ import (
 	"github.com/ahmadammarm/amami/backend/internal/domain"
 	"github.com/ahmadammarm/amami/backend/internal/dto/finance"
 	financeRepo "github.com/ahmadammarm/amami/backend/internal/repository/finance"
+	"github.com/ahmadammarm/amami/backend/pkg/apperror"
+	"github.com/ahmadammarm/amami/backend/pkg/utils"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type FinanceService interface {
 	CreateFund(req finance.CreateFundRequest) (*finance.FundResponse, error)
 	GetFunds() ([]finance.FundResponse, error)
 	CreateTransaction(req finance.CreateTransactionRequest, userID uuid.UUID) (*finance.TransactionResponse, error)
-	GetTransactions(page int, limit int) (*finance.PaginatedTransactionResponse, error)
+	ReverseTransaction(id uuid.UUID, req finance.ReverseTransactionRequest, userID uuid.UUID) (*finance.TransactionResponse, error)
+	GetTransactions(page int, limit int) (utils.Page[finance.TransactionResponse], error)
 }
 
 type financeService struct {
@@ -31,103 +35,107 @@ func (s *financeService) CreateFund(req finance.CreateFundRequest) (*finance.Fun
 	}
 
 	if err := s.repo.CreateFund(fund); err != nil {
-		return nil, err
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, apperror.Conflict("fund code already exists")
+		}
+		return nil, apperror.Internal("failed to create fund", err)
 	}
 
-	return &finance.FundResponse{
-		ID:             fund.ID,
-		Name:           fund.Name,
-		Code:           fund.Code,
-		CurrentBalance: fund.CurrentBalance,
-	}, nil
+	res := finance.ToFundResponse(fund)
+	return &res, nil
 }
 
 func (s *financeService) GetFunds() ([]finance.FundResponse, error) {
 	funds, err := s.repo.GetFunds()
 	if err != nil {
-		return nil, err
+		return nil, apperror.Internal("failed to fetch funds", err)
 	}
 
-	var responses []finance.FundResponse
-	for _, f := range funds {
-		responses = append(responses, finance.FundResponse{
-			ID:             f.ID,
-			Name:           f.Name,
-			Code:           f.Code,
-			CurrentBalance: f.CurrentBalance,
-		})
+	res := make([]finance.FundResponse, 0, len(funds))
+	for i := range funds {
+		res = append(res, finance.ToFundResponse(&funds[i]))
 	}
-	return responses, nil
+	return res, nil
 }
 
 func (s *financeService) CreateTransaction(req finance.CreateTransactionRequest, userID uuid.UUID) (*finance.TransactionResponse, error) {
-	// Basic validation happens at handler, but we must enforce business logic here
-	if req.Type != "CREDIT" && req.Type != "DEBIT" {
-		return nil, errors.New("invalid transaction type")
-	}
-
 	tx := &domain.Transaction{
 		FundID:      req.FundID,
 		Type:        req.Type,
 		Amount:      req.Amount,
 		Category:    req.Category,
+		Description: req.Description,
 		ReferenceID: req.ReferenceID,
 		CreatedBy:   userID,
 	}
 
-	// For metadata we might want to store the description
-	if req.Description != "" {
-		tx.Metadata = []byte(`{"description":"` + req.Description + `"}`)
-	} else {
-		tx.Metadata = []byte(`{}`)
-	}
-
 	if err := s.repo.CreateTransaction(tx); err != nil {
-		return nil, err
+		return nil, MapLedgerError(err)
 	}
 
-	return &finance.TransactionResponse{
-		ID:          tx.ID,
-		FundID:      tx.FundID,
-		Type:        tx.Type,
-		Amount:      tx.Amount,
-		Category:    tx.Category,
-		ReferenceID: tx.ReferenceID,
-		CreatedBy:   tx.CreatedBy,
-		CreatedAt:   tx.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	res := finance.ToTransactionResponse(tx, nil)
+	return &res, nil
+}
+
+// ReverseTransaction posts an offsetting entry for an existing transaction.
+// The ledger is append-only, so this is the only way to correct a mistake.
+func (s *financeService) ReverseTransaction(id uuid.UUID, req finance.ReverseTransactionRequest, userID uuid.UUID) (*finance.TransactionResponse, error) {
+	reversal, err := s.repo.ReverseTransaction(id, func(original *domain.Transaction) (*domain.Transaction, error) {
+		return BuildReversal(original, req.Reason, userID)
+	})
+	if err != nil {
+		return nil, MapLedgerError(err)
+	}
+
+	res := finance.ToTransactionResponse(reversal, nil)
+	return &res, nil
+}
+
+// BuildReversal returns the entry that cancels original: same fund and amount,
+// opposite direction, linked through ReversalOfID.
+func BuildReversal(original *domain.Transaction, reason string, userID uuid.UUID) (*domain.Transaction, error) {
+	if original.ReversalOfID != nil {
+		return nil, domain.ErrCannotReverseReversal
+	}
+
+	originalID := original.ID
+	return &domain.Transaction{
+		FundID:       original.FundID,
+		Type:         original.Type.Opposite(),
+		Amount:       original.Amount,
+		Category:     domain.CategoryReversal,
+		Description:  reason,
+		ReversalOfID: &originalID,
+		CreatedBy:    userID,
 	}, nil
 }
 
-func (s *financeService) GetTransactions(page int, limit int) (*finance.PaginatedTransactionResponse, error) {
-	transactions, total, err := s.repo.GetTransactions(page, limit)
+func (s *financeService) GetTransactions(page int, limit int) (utils.Page[finance.TransactionResponse], error) {
+	rows, total, err := s.repo.GetTransactions(page, limit)
 	if err != nil {
-		return nil, err
+		return utils.Page[finance.TransactionResponse]{}, apperror.Internal("failed to fetch transactions", err)
 	}
 
-	var responses []finance.TransactionResponse
-	for _, tx := range transactions {
-		responses = append(responses, finance.TransactionResponse{
-			ID:          tx.ID,
-			FundID:      tx.FundID,
-			Type:        tx.Type,
-			Amount:      tx.Amount,
-			Category:    tx.Category,
-			ReferenceID: tx.ReferenceID,
-			CreatedBy:   tx.CreatedBy,
-			CreatedAt:   tx.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		})
+	res := make([]finance.TransactionResponse, 0, len(rows))
+	for i := range rows {
+		res = append(res, finance.ToTransactionResponse(&rows[i].Transaction, rows[i].ReversedByID))
 	}
-	
-	totalPages := 0
-	if limit > 0 {
-		totalPages = int((total + int64(limit) - 1) / int64(limit))
-	}
+	return utils.NewPage(res, total, page, limit), nil
+}
 
-	return &finance.PaginatedTransactionResponse{
-		Data:       responses,
-		Total:      total,
-		Page:       page,
-		Limit:      limit,
-		TotalPages: totalPages,
-	}, nil
+// MapLedgerError converts ledger rule violations into client-facing errors.
+// It is shared with other modules that post to the ledger (e.g. zakat).
+func MapLedgerError(err error) error {
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return apperror.NotFound("transaction not found")
+	case errors.Is(err, domain.ErrFundNotFound):
+		return apperror.Validation(domain.ErrFundNotFound.Error())
+	case errors.Is(err, domain.ErrInsufficientBalance),
+		errors.Is(err, domain.ErrAlreadyReversed),
+		errors.Is(err, domain.ErrCannotReverseReversal):
+		return apperror.Conflict(err.Error())
+	default:
+		return apperror.Internal("failed to post ledger transaction", err)
+	}
 }

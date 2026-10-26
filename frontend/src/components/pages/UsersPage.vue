@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useUsersQuery, useUpdateUserStatusMutation, useDeleteUserMutation } from '../../composables/useUserQuery';
-import { 
-  Users as UsersIcon, 
-  UserPlus, 
-  Search, 
-  MoreVertical, 
-  Shield, 
-  Mail, 
+import { useAuthStore } from '../../stores/auth';
+import type { UserStatus } from '../../types/auth';
+import type { UserResponse } from '../../types/user';
+import {
+  Users as UsersIcon,
+  UserPlus,
+  Search,
+  MoreVertical,
+  Shield,
+  Mail,
   Circle,
   RefreshCcw,
   Ban,
@@ -36,13 +39,14 @@ import {
   DropdownMenuTrigger,
 } from '../atoms/dropdown-menu';
 
+const authStore = useAuthStore();
 const { data: users, isLoading, isRefetching, refetch } = useUsersQuery();
 const { mutate: updateStatus } = useUpdateUserStatusMutation();
 const { mutate: deleteUser, isPending: isDeleting } = useDeleteUserMutation();
 
 const isInviteDialogOpen = ref(false);
 const isDeleteDialogOpen = ref(false);
-const userToDelete = ref<any>(null);
+const userToDelete = ref<UserResponse | null>(null);
 const searchQuery = ref('');
 const successDialog = ref({
   open: false,
@@ -58,12 +62,16 @@ const handleInviteSuccess = (tempPass: string) => {
   };
 };
 
-const toggleUserStatus = (user: any) => {
+/** The backend rejects deleting yourself or another SUPER_ADMIN, so the action is hidden for them. */
+const canDelete = (user: UserResponse) =>
+  user.role_name !== 'SUPER_ADMIN' && user.id !== authStore.user?.id;
+
+const toggleUserStatus = (user: UserResponse) => {
   const newStatus = user.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
   updateStatus({ id: user.id, status: newStatus });
 };
 
-const confirmDelete = (user: any) => {
+const confirmDelete = (user: UserResponse) => {
   userToDelete.value = user;
   isDeleteDialogOpen.value = true;
 };
@@ -79,12 +87,11 @@ const executeDelete = () => {
   }
 };
 
-const getStatusColor = (status: string) => {
+const getStatusColor = (status: UserStatus) => {
   switch (status) {
     case 'ACTIVE': return 'text-emerald-600 bg-emerald-50';
     case 'SUSPENDED': return 'text-red-600 bg-red-50';
     case 'PENDING_PASSWORD_CHANGE': return 'text-amber-600 bg-amber-50';
-    default: return 'text-gray-600 bg-gray-50';
   }
 };
 </script>
@@ -101,17 +108,17 @@ const getStatusColor = (status: string) => {
         <h1 class="text-3xl font-bold text-gray-900">User Management</h1>
         <p class="text-gray-500 font-medium">Manage your mosque staff, roles, and system access.</p>
       </div>
-      
+
       <div class="flex items-center gap-3">
-        <Button 
-          variant="outline" 
-          @click="refetch" 
+        <Button
+          variant="outline"
+          @click="refetch"
           :disabled="isLoading || isRefetching"
           class="bg-white border-gray-200 h-11 rounded-xl"
         >
           <RefreshCcw :class="['w-4 h-4', (isLoading || isRefetching) && 'animate-spin']" />
         </Button>
-        <Button 
+        <Button
           @click="isInviteDialogOpen = true"
           class="h-11 px-6 rounded-xl font-bold shadow-lg shadow-primary/20"
         >
@@ -127,9 +134,9 @@ const getStatusColor = (status: string) => {
       <div class="p-6 border-b border-gray-50 bg-gray-50/30 flex items-center gap-4">
         <div class="relative flex-1 max-w-sm">
           <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <Input 
-            v-model="searchQuery" 
-            placeholder="Search by name, email, or username..." 
+          <Input
+            v-model="searchQuery"
+            placeholder="Search by name, email, or username..."
             class="pl-10 h-10 rounded-lg border-gray-200 bg-white"
           />
         </div>
@@ -165,7 +172,7 @@ const getStatusColor = (status: string) => {
                 <td class="px-8 py-5">
                   <div class="flex items-center gap-4">
                     <div class="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
-                      {{ user.full_name?.[0] || user.username[0].toUpperCase() }}
+                      {{ user.full_name?.[0] || user.username.charAt(0).toUpperCase() }}
                     </div>
                     <div class="flex flex-col">
                       <span class="text-sm font-bold text-gray-900 leading-none mb-1">{{ user.full_name || 'No Name' }}</span>
@@ -207,7 +214,7 @@ const getStatusColor = (status: string) => {
                           <CheckCircle2 class="w-4 h-4 mr-2 text-emerald-500" /> Activate User
                         </template>
                       </DropdownMenuItem>
-                      <DropdownMenuItem v-if="user.role_name !== 'SUPER_ADMIN'" @click="confirmDelete(user)" class="rounded-lg font-bold text-xs py-2.5 cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700">
+                      <DropdownMenuItem v-if="canDelete(user)" @click="confirmDelete(user)" class="rounded-lg font-bold text-xs py-2.5 cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700">
                         <Trash2 class="w-4 h-4 mr-2" /> Hapus User
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -237,8 +244,8 @@ const getStatusColor = (status: string) => {
     </div>
 
     <!-- Modals -->
-    <CreateUserDialog 
-      v-model:open="isInviteDialogOpen" 
+    <CreateUserDialog
+      v-model:open="isInviteDialogOpen"
       @success="handleInviteSuccess"
     />
 
@@ -251,9 +258,9 @@ const getStatusColor = (status: string) => {
     <AlertDialog v-model:open="isDeleteDialogOpen">
       <AlertDialogContent class="rounded-2xl">
         <AlertDialogHeader>
-          <AlertDialogTitle class="text-xl">Hapus Pengguna Secara Permanen?</AlertDialogTitle>
+          <AlertDialogTitle class="text-xl">Hapus Pengguna?</AlertDialogTitle>
           <AlertDialogDescription class="text-base leading-relaxed">
-            Anda yakin ingin menghapus <strong>{{ userToDelete?.username }}</strong>? Seluruh data yang berkaitan dengan pengguna ini (seperti identitas jamaah) juga akan ikut terhapus. Aksi ini tidak dapat dibatalkan.
+            Anda yakin ingin menghapus <strong>{{ userToDelete?.username }}</strong>? Akun dan profil jamaah yang terhubung akan dinonaktifkan dan tidak bisa login lagi. Riwayat datanya tetap tersimpan untuk keperluan laporan.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter class="gap-3">

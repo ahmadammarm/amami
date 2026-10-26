@@ -9,12 +9,17 @@ import (
 
 	"github.com/ahmadammarm/amami/backend/database/seed"
 	"github.com/ahmadammarm/amami/backend/internal/di"
+	"github.com/ahmadammarm/amami/backend/internal/domain"
 	"github.com/ahmadammarm/amami/backend/internal/middleware"
 	"github.com/ahmadammarm/amami/backend/pkg/logger"
 	"github.com/ahmadammarm/amami/backend/pkg/utils"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
+
+// maxDocumentationFiles mirrors the per-request file limit in the agenda service;
+// together with MaxUploadBytes it bounds the size of an upload request.
+const maxDocumentationFiles = 10
 
 func main() {
 	// Initialize Logger
@@ -39,7 +44,10 @@ func main() {
 		os.Exit(0)
 	}
 
+	utils.UseJSONFieldNames()
+
 	r := gin.Default()
+	r.MaxMultipartMemory = config.AppConfig.MaxUploadBytes
 
 	// Configure CORS
 	r.Use(cors.New(cors.Config{
@@ -54,6 +62,16 @@ func main() {
 	// Fix Gin warning by setting trusted proxies
 	_ = r.SetTrustedProxies(nil)
 
+	// Uploaded documentation files; stored under unguessable UUID names.
+	r.Static(di.UploadURLPrefix, config.AppConfig.UploadDir)
+
+	// perm builds the permission check for a route.
+	perm := func(code domain.PermissionCode) gin.HandlerFunc {
+		return middleware.RequirePermission(config.RoleRepo, code)
+	}
+	// protected is the middleware every authenticated, non-auth route group uses.
+	protected := []gin.HandlerFunc{middleware.RequireAuth(), middleware.RejectScope(utils.ScopePasswordReset)}
+
 	// API Versioning & Global Rate Limiting
 	v1 := r.Group("/api/v1")
 	v1.Use(middleware.RateLimiter(100, 1*time.Minute)) // 100 req/min for general API
@@ -66,111 +84,116 @@ func main() {
 			auth.POST("/change-password", middleware.RequireAuth(), config.AuthHandler.ChangePassword)
 		}
 
-		// User Management Module (Protected)
-		users := v1.Group("/users", middleware.RequireAuth(), middleware.RejectScope(utils.ScopePasswordReset))
+		// User Management Module
+		users := v1.Group("/users", protected...)
+		users.Use(perm(domain.PermUserManage))
 		{
-			users.POST("/invite", middleware.RequirePermission(config.RoleRepo, "user:invite"), config.UserHandler.Handler.InviteUser)
-			users.GET("", middleware.RequirePermission(config.RoleRepo, "user:manage"), config.UserHandler.Handler.GetAllUsers)
-			users.PATCH("/:id/status", middleware.RequirePermission(config.RoleRepo, "user:manage"), config.UserHandler.Handler.UpdateUserStatus)
-			users.DELETE("/:id", middleware.RequirePermission(config.RoleRepo, "user:manage"), config.UserHandler.Handler.DeleteUser)
-		}
-
-		// Qurban Module
-		qurbanRoutes := v1.Group("/qurban", middleware.RequireAuth())
-		{
-			// Packages
-			qurbanRoutes.GET("/packages", config.QurbanHandler.Handler.GetAllPackages)
-			qurbanRoutes.POST("/packages", config.QurbanHandler.Handler.CreatePackage)
-			qurbanRoutes.PUT("/packages/:id", config.QurbanHandler.Handler.UpdatePackage)
-			qurbanRoutes.DELETE("/packages/:id", config.QurbanHandler.Handler.DeletePackage)
-
-			// Bookings
-			qurbanRoutes.GET("/bookings", config.QurbanHandler.Handler.GetBookings)
-			qurbanRoutes.POST("/bookings", config.QurbanHandler.Handler.CreateBooking)
-
-			// Animals
-			qurbanRoutes.GET("/animals", config.QurbanHandler.Handler.GetAnimals)
-			qurbanRoutes.POST("/animals", config.QurbanHandler.Handler.CreateAnimal)
-			qurbanRoutes.PUT("/animals/:id", config.QurbanHandler.Handler.UpdateAnimal)
-			qurbanRoutes.DELETE("/animals/:id", config.QurbanHandler.Handler.DeleteAnimal)
+			users.GET("", config.UserHandler.Handler.GetAllUsers)
+			users.GET("/roles", config.UserHandler.Handler.GetRoles)
+			users.POST("/invite", config.UserHandler.Handler.InviteUser)
+			users.PATCH("/:id/status", config.UserHandler.Handler.UpdateUserStatus)
+			users.DELETE("/:id", config.UserHandler.Handler.DeleteUser)
 		}
 
 		// System Settings Module
 		settings := v1.Group("/settings")
 		{
 			settings.GET("/profile", config.SettingsHandler.Handler.GetMosqueProfile)
-			
-			// Protected settings
-			protected := settings.Group("", middleware.RequireAuth(), middleware.RejectScope(utils.ScopePasswordReset))
+
+			managed := settings.Group("", protected...)
+			managed.Use(perm(domain.PermSettingsManage))
 			{
-				protected.PUT("/profile", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.UpdateMosqueProfile)
-				protected.GET("/smtp", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.GetSMTPConfig)
-				protected.PUT("/smtp", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.UpdateSMTPConfig)
-				protected.POST("/smtp/test", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.TestSMTPConnection)
-				protected.GET("/health", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.GetSystemHealth)
-				protected.GET("/audit", middleware.RequirePermission(config.RoleRepo, "settings:manage"), config.SettingsHandler.Handler.GetAuditLogs)
+				managed.PUT("/profile", config.SettingsHandler.Handler.UpdateMosqueProfile)
+				managed.GET("/smtp", config.SettingsHandler.Handler.GetSMTPConfig)
+				managed.PUT("/smtp", config.SettingsHandler.Handler.UpdateSMTPConfig)
+				managed.POST("/smtp/test", config.SettingsHandler.Handler.TestSMTPConnection)
+				managed.GET("/health", config.SettingsHandler.Handler.GetSystemHealth)
+				managed.GET("/audit", config.SettingsHandler.Handler.GetAuditLogs)
 			}
 		}
 
 		// Finance Module
-		finance := v1.Group("/finance", middleware.RequireAuth(), middleware.RejectScope(utils.ScopePasswordReset))
+		finance := v1.Group("/finance", protected...)
 		{
-			// Read-only for roles with ledger:read
-			finance.GET("/funds", middleware.RequirePermission(config.RoleRepo, "ledger:read"), config.FinanceHandler.Handler.GetFunds)
-			finance.GET("/transactions", middleware.RequirePermission(config.RoleRepo, "ledger:read"), config.FinanceHandler.Handler.GetTransactions)
-			
-			// Write-only for roles with ledger:write (Bendahara/SuperAdmin)
-			finance.POST("/funds", middleware.RequirePermission(config.RoleRepo, "ledger:write"), config.FinanceHandler.Handler.CreateFund)
-			finance.POST("/transactions", middleware.RequirePermission(config.RoleRepo, "ledger:write"), config.FinanceHandler.Handler.CreateTransaction)
+			finance.GET("/funds", perm(domain.PermLedgerRead), config.FinanceHandler.Handler.GetFunds)
+			finance.GET("/transactions", perm(domain.PermLedgerRead), config.FinanceHandler.Handler.GetTransactions)
+
+			finance.POST("/funds", perm(domain.PermLedgerWrite), config.FinanceHandler.Handler.CreateFund)
+			finance.POST("/transactions", perm(domain.PermLedgerWrite), config.FinanceHandler.Handler.CreateTransaction)
+			finance.POST("/transactions/:id/reverse", perm(domain.PermLedgerWrite), config.FinanceHandler.Handler.ReverseTransaction)
 		}
 
 		// Dashboard Module
-		dashboard := v1.Group("/dashboard", middleware.RequireAuth())
+		dashboard := v1.Group("/dashboard", protected...)
 		{
-			// Read-only for authenticated users
 			dashboard.GET("/metrics", config.DashboardHandler.Handler.GetMetrics)
 		}
 
-		// Inventory Routes
-		inventoryRoutes := v1.Group("/inventory", middleware.RequireAuth())
-		inventoryRoutes.Use(middleware.RequirePermission(config.RoleRepo, "inventory:manage"))
-		{
-			// Assets
-			inventoryRoutes.GET("/assets", config.InventoryHandler.Handler.GetAllAssets)
-			inventoryRoutes.POST("/assets", config.InventoryHandler.Handler.CreateAsset)
-			inventoryRoutes.PUT("/assets/:id", config.InventoryHandler.Handler.UpdateAsset)
-			inventoryRoutes.DELETE("/assets/:id", config.InventoryHandler.Handler.DeleteAsset)
-
-			// Loans
-			inventoryRoutes.POST("/assets/:id/loans", config.InventoryHandler.Handler.CreateLoan)
-			inventoryRoutes.PUT("/assets/loans/:loanId/return", config.InventoryHandler.Handler.ReturnLoan)
-		}
-
-		// Agenda Routes
-		agendaRoutes := v1.Group("/agenda", middleware.RequireAuth())
-		agendaRoutes.Use(middleware.RequirePermission(config.RoleRepo, "inventory:manage"))
-		{
-			agendaRoutes.GET("", config.AgendaHandler.Handler.GetAgendas)
-			agendaRoutes.POST("", config.AgendaHandler.Handler.CreateAgenda)
-			agendaRoutes.PUT("/:id", config.AgendaHandler.Handler.UpdateAgenda)
-		}
-
 		// Jamaah Module
-		jamaah := v1.Group("/jamaah", middleware.RequireAuth())
+		jamaah := v1.Group("/jamaah", protected...)
 		{
-			jamaah.GET("", middleware.RequirePermission(config.RoleRepo, "jamaah:manage"), config.JamaahHandler.Handler.GetJamaahs)
-			jamaah.GET("/:id", middleware.RequirePermission(config.RoleRepo, "jamaah:manage"), config.JamaahHandler.Handler.GetJamaahByID)
-			jamaah.POST("", middleware.RequirePermission(config.RoleRepo, "jamaah:manage"), config.JamaahHandler.Handler.CreateJamaah)
-			jamaah.PUT("/:id", middleware.RequirePermission(config.RoleRepo, "jamaah:manage"), config.JamaahHandler.Handler.UpdateJamaah)
+			jamaah.GET("", perm(domain.PermJamaahManage), config.JamaahHandler.Handler.GetJamaahs)
+			jamaah.GET("/:id", perm(domain.PermJamaahManage), config.JamaahHandler.Handler.GetJamaahByID)
+			jamaah.POST("", perm(domain.PermJamaahManage), config.JamaahHandler.Handler.CreateJamaah)
+			jamaah.PUT("/:id", perm(domain.PermJamaahManage), config.JamaahHandler.Handler.UpdateJamaah)
+
+			jamaah.GET("/:id/mustahik-survey", perm(domain.PermJamaahManage), config.JamaahHandler.Handler.GetSurvey)
+			jamaah.PUT("/:id/mustahik-survey", perm(domain.PermMustahikSurvey), config.JamaahHandler.Handler.SubmitSurvey)
 		}
 
 		// Zakat Module
-		zakat := v1.Group("/zakat", middleware.RequireAuth())
+		zakat := v1.Group("/zakat", protected...)
 		{
-			zakat.GET("/donations", middleware.RequirePermission(config.RoleRepo, "zakat:manage"), config.ZakatHandler.Handler.GetDonations)
-			zakat.GET("/distributions", middleware.RequirePermission(config.RoleRepo, "zakat:manage"), config.ZakatHandler.Handler.GetDistributions)
-			zakat.POST("/donations", middleware.RequirePermission(config.RoleRepo, "zakat:manage"), config.ZakatHandler.Handler.CollectZakat)
-			zakat.POST("/distributions", middleware.RequirePermission(config.RoleRepo, "zakat:manage"), config.ZakatHandler.Handler.DistributeZakat)
+			zakat.GET("/donations", perm(domain.PermZakatRead), config.ZakatHandler.Handler.GetDonations)
+			zakat.GET("/distributions", perm(domain.PermZakatRead), config.ZakatHandler.Handler.GetDistributions)
+			zakat.POST("/donations", perm(domain.PermZakatManage), config.ZakatHandler.Handler.CollectZakat)
+			zakat.POST("/distributions", perm(domain.PermZakatManage), config.ZakatHandler.Handler.DistributeZakat)
+		}
+
+		// Qurban Module
+		qurban := v1.Group("/qurban", protected...)
+		{
+			qurban.GET("/packages", perm(domain.PermQurbanRead), config.QurbanHandler.Handler.GetAllPackages)
+			qurban.POST("/packages", perm(domain.PermQurbanManage), config.QurbanHandler.Handler.CreatePackage)
+			qurban.PUT("/packages/:id", perm(domain.PermQurbanManage), config.QurbanHandler.Handler.UpdatePackage)
+			qurban.DELETE("/packages/:id", perm(domain.PermQurbanManage), config.QurbanHandler.Handler.DeletePackage)
+
+			qurban.GET("/bookings", perm(domain.PermQurbanRead), config.QurbanHandler.Handler.GetBookings)
+			qurban.POST("/bookings", perm(domain.PermQurbanManage), config.QurbanHandler.Handler.CreateBooking)
+
+			qurban.GET("/animals", perm(domain.PermQurbanRead), config.QurbanHandler.Handler.GetAnimals)
+			qurban.POST("/animals", perm(domain.PermQurbanManage), config.QurbanHandler.Handler.CreateAnimal)
+			qurban.PUT("/animals/:id", perm(domain.PermQurbanManage), config.QurbanHandler.Handler.UpdateAnimal)
+			qurban.DELETE("/animals/:id", perm(domain.PermQurbanManage), config.QurbanHandler.Handler.DeleteAnimal)
+		}
+
+		// Inventory Module
+		inventory := v1.Group("/inventory", protected...)
+		{
+			inventory.GET("/assets", perm(domain.PermInventoryRead), config.InventoryHandler.Handler.GetAllAssets)
+			inventory.POST("/assets", perm(domain.PermInventoryManage), config.InventoryHandler.Handler.CreateAsset)
+			inventory.PUT("/assets/:id", perm(domain.PermInventoryManage), config.InventoryHandler.Handler.UpdateAsset)
+			inventory.DELETE("/assets/:id", perm(domain.PermInventoryManage), config.InventoryHandler.Handler.DeleteAsset)
+
+			inventory.POST("/assets/:id/loans", perm(domain.PermInventoryManage), config.InventoryHandler.Handler.CreateLoan)
+			inventory.PUT("/assets/loans/:loanId/return", perm(domain.PermInventoryManage), config.InventoryHandler.Handler.ReturnLoan)
+		}
+
+		// Agenda Module
+		agenda := v1.Group("/agenda", protected...)
+		{
+			agenda.GET("", perm(domain.PermAgendaRead), config.AgendaHandler.Handler.GetAgendas)
+			agenda.POST("", perm(domain.PermAgendaManage), config.AgendaHandler.Handler.CreateAgenda)
+			agenda.PUT("/:id", perm(domain.PermAgendaManage), config.AgendaHandler.Handler.UpdateAgenda)
+			agenda.DELETE("/:id", perm(domain.PermAgendaManage), config.AgendaHandler.Handler.DeleteAgenda)
+
+			agenda.GET("/:id/documentation", perm(domain.PermAgendaRead), config.AgendaHandler.Handler.GetDocumentation)
+			agenda.POST("/:id/documentation",
+				perm(domain.PermAgendaManage),
+				middleware.LimitBody(config.AppConfig.MaxUploadBytes*maxDocumentationFiles+1<<20),
+				config.AgendaHandler.Handler.UploadDocumentation,
+			)
+			agenda.DELETE("/:id/documentation/:docId", perm(domain.PermAgendaManage), config.AgendaHandler.Handler.DeleteDocumentation)
 		}
 	}
 

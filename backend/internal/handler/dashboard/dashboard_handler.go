@@ -1,9 +1,9 @@
 package dashboard
 
 import (
-	"net/http"
-
 	dashSvc "github.com/ahmadammarm/amami/backend/internal/service/dashboard"
+	"github.com/ahmadammarm/amami/backend/pkg/apperror"
+	"github.com/ahmadammarm/amami/backend/pkg/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,8 +18,8 @@ func NewDashboardHandler(svc dashSvc.DashboardService) *DashboardHandler {
 func (h *DashboardHandler) GetMetrics(c *gin.Context) {
 	metrics, err := h.svc.GetMetrics()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.HandleError(c, apperror.Internal("failed to fetch dashboard metrics", err))
 		return
 	}
-	c.JSON(http.StatusOK, metrics)
+	utils.SuccessResponse(c, "Dashboard metrics fetched successfully", metrics)
 }
