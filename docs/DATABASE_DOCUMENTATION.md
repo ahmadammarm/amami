@@ -203,7 +203,7 @@ Soft-deleting an agenda keeps its documentation for the archive.
 - **Foreign keys** on financial and religious records are `RESTRICT`, so nothing that a ledger entry, zakat record or booking depends on can be hard-deleted. Links that only describe *who* did something (`surveyed_by`, `uploaded_by`, `created_by_id`, `jamaahs.user_id`) are `SET NULL`.
 - **Atomic postings.** Every ledger write runs in one database transaction that locks the fund row (`SELECT ... FOR UPDATE`), rejects a debit larger than the balance, updates `current_balance`, and inserts the transaction. Zakat with a fund and reversals use the same routine, so a fund balance always equals the sum of its ledger rows.
 - **Qurban bookings** lock the package row, check and decrement `stock_remaining`, and insert the booking in one transaction, so a package cannot be overbooked.
-- **Loans** create the loan and mark the asset `LOANED` in one transaction; returns set `return_date` and mark the asset `GOOD` together.
+- **Loans** lock the asset, check it is `GOOD`, create the loan and mark the asset `LOANED` in one transaction; returns lock the loan, check it is still open, set `return_date` and mark the asset `GOOD` together. An asset can therefore never be lent twice or returned twice.
 
 ## Data access patterns
 
@@ -218,10 +218,13 @@ A database transaction is opened with GORM's `db.Transaction(func(tx) error { ..
 | Record income / expense | `finance.CreateTransaction` | fund balance + ledger row |
 | Reverse a transaction | `finance.ReverseTransaction` | fund balance + reversal row |
 | Collect zakat | `zakat.CollectZakat` | fund balance + ledger row (if cash) + donation |
-| Distribute zakat | `zakat.DistributeZakat` | fund balance + ledger row (if cash) + distribution |
+| Distribute zakat | `zakat.DistributeZakat` | recipient share lock + fund balance + ledger row (if cash) + distribution |
 | Book qurban | `qurban.CreateBooking` | package quota + booking |
+| Edit qurban package | `qurban.UpdatePackage` | package row (quota checked against bookings) |
 | Lend / return asset | `inventory.CreateLoan`, `ReturnLoan` | loan row + asset status |
-| Save mustahik survey | `jamaah.SaveSurvey` | survey upsert + jamaah score |
+| Edit / delete asset | `inventory.UpdateAsset`, `DeleteAsset` | asset row (loan status checked) |
+| Save mustahik survey | `jamaah.SaveSurvey` | jamaah lock + survey upsert + jamaah score |
+| Save mosque profile / SMTP | `settings.UpsertSettings` | all keys in one statement |
 | Invite user | `user.CreateUserWithProfile` | user + linked jamaah profile |
 | Delete user | `user.DeleteUser` | soft delete of jamaah profile + user |
 | Sync RBAC on start | `seed.SyncRBAC` | permissions, roles, grants |
@@ -240,24 +243,60 @@ COMMIT                                            -- lock released
 
 `FOR UPDATE` makes concurrent postings to the same fund wait for each other, so two expenses can never both pass the balance check against the same starting balance. Postings to different funds do not block each other. Because manual entries, reversals and both zakat flows all reuse this one routine, the rule "a fund balance equals the sum of its ledger rows" lives in exactly one place.
 
-### Business rule inside the transaction: reversals
+The lock helpers live in `pkg/database/tx.go`: `LockForUpdate[T](tx, id)` (exclusive, for rows about to change) and `LockForShare[T](tx, id)` (shared, for rows that must stay as they are while something else is written). Both must be called inside `db.Transaction`; a missing or soft-deleted row returns `gorm.ErrRecordNotFound`.
 
-A reversal has to read the original entry, decide whether it may be reversed, and post the opposite entry, all atomically. Rules belong in the service and atomicity in the repository, so the service passes a **builder callback** into the transaction:
+### Locked read, service rule, write
+
+Whenever the outcome of a write depends on the current state of a row ("only a `GOOD` asset can be lent", "the quota cannot drop below the units already booked"), checking first and writing later is a race: another request can change the row in between. Rules belong in the service and atomicity in the repository, so the service passes the rule into the repository as a **callback**, and the repository runs it against the locked row:
 
 ```go
-repo.ReverseTransaction(id, func(original *domain.Transaction) (*domain.Transaction, error) {
-    return BuildReversal(original, reason, userID) // pure service logic
+// service: a pure rule, unit-tested without a database
+func newLoan(req CreateAssetLoanRequest) inventoryRepo.LoanBuilder {
+    return func(asset *domain.Asset) (*domain.AssetLoan, error) {
+        if asset.CurrentStatus != domain.AssetGood {
+            return nil, apperror.Conflict("only assets in GOOD condition can be loaned")
+        }
+        return &domain.AssetLoan{AssetID: asset.ID, ...}, nil
+    }
+}
+
+// repository: owns the transaction and the lock
+db.Transaction(func(tx *gorm.DB) error {
+    asset, err := database.LockForUpdate[domain.Asset](tx, assetID) // 1. lock
+    if err != nil { return err }
+    loan, err := build(asset)                                         // 2. rule
+    if err != nil { return err }                                      //    rejected: roll back
+    ...                                                               // 3. write
 })
 ```
 
-Inside the transaction, the repository:
+A rule that rejects returns an `apperror` value; the repository passes it through unchanged and the service returns it as is (`apperror.FromStore` keeps `*apperror.Error`, turns `gorm.ErrRecordNotFound` into 404 and anything else into 500).
 
-1. locks the original row (`FOR UPDATE`);
-2. checks that no reversal points at it yet;
-3. calls the builder, which rejects reversing a reversal;
-4. posts the result through `PostTransaction`.
+| Repository method | Row locked | Rule (service) |
+|---|---|---|
+| `finance.ReverseTransaction` | transaction (`FOR UPDATE`) | `BuildReversal`: not already reversed, not a reversal itself |
+| `inventory.CreateLoan` | asset (`FOR UPDATE`) | `newLoan`: asset is `GOOD` |
+| `inventory.ReturnLoan` | loan (`FOR UPDATE`) | `recordReturn`: loan still open, return date not before loan date |
+| `inventory.UpdateAsset` | asset (`FOR UPDATE`) | `editAsset`: an edit can neither set nor clear `LOANED` |
+| `inventory.DeleteAsset` | asset (`FOR UPDATE`) | `ensureNotOnLoan` |
+| `qurban.UpdatePackage` | package (`FOR UPDATE`) | `applyPackageChange`: new total not below units booked |
+| `zakat.DistributeZakat` | recipient jamaah (`FOR SHARE`) | `ensureMustahik` |
+| `jamaah.SaveSurvey` | jamaah (`FOR UPDATE`) | jamaah still exists |
 
-Lock order is always transaction row, then fund row. Concurrent reversals therefore queue on the transaction row before touching the fund, and cannot deadlock each other.
+Qurban bookings lock the same package row as quota edits, so the two always run one after the other and a booking's decrement is never overwritten.
+
+**Lock order.** Deadlocks are avoided by always taking locks in the same order:
+
+- transaction row, then fund row (reversals);
+- loan row, then asset row (returns); nothing locks an asset and then a loan;
+- jamaah row, then fund row (zakat distribution);
+- settings keys in the fixed order of the request slice.
+
+Plain field edits with no state-dependent rule (agenda, jamaah profile, qurban animal) are not locked: the last writer wins, which is the intended behaviour. They do report a row deleted in the meantime, see below.
+
+### Writes that match no row
+
+`database.ExpectRows(res)` turns "0 rows affected" into `gorm.ErrRecordNotFound`. Every update and delete by id uses it, so editing or deleting a record that another user has just deleted returns `404 Not Found` instead of a false success.
 
 ### Constraints as the final guard
 
@@ -288,7 +327,7 @@ The new value is computed by the database from the current row, not from a value
 Writes that mean "create or replace" use `INSERT ... ON CONFLICT` rather than read-then-write:
 
 - `mustahik_data`: one survey per jamaah, conflict on `jamaah_id` updates the answers;
-- `system_settings`: conflict on `key` updates the value;
+- `system_settings`: all keys of a form (mosque profile, SMTP) are written by one multi-row `INSERT ... ON CONFLICT (key) DO UPDATE`. One statement is atomic, so a save is all-or-nothing and two concurrent saves never mix keys from both;
 - `role_permissions`: `ON CONFLICT DO NOTHING`, so syncing grants is idempotent.
 
 ### Partial-column updates
@@ -313,14 +352,19 @@ If a later file or the insert fails, the files already written are deleted again
 
 List endpoints run a `COUNT(*)` with the same filters, then `ORDER BY ... OFFSET ... LIMIT` (limit capped at 100). Every list has an explicit order, so pages are stable. Sort options that come from the client, such as the jamaah list's `sort`, are mapped to fixed `ORDER BY` clauses in the service and never interpolated.
 
-### Known gaps
+### Concurrency tests
 
-Two writes still use check-then-act outside a lock, and can misbehave under truly simultaneous requests:
+The locking is verified against a real PostgreSQL server by `*_concurrency_test.go` files in `internal/service/{finance,inventory,qurban}`. Each test releases 20 to 40 goroutines at once through a start barrier (`internal/testutil/pgtest.RunConcurrently`):
 
-- **Lending an asset.** The service checks that the asset is `GOOD` before the loan transaction starts, and the transaction does not lock or re-check the asset row. Two loans of the same asset at the same moment can both succeed. Returning a loan has the same shape.
-- **Editing a qurban package quota.** The service reads the package, computes the new `stock_remaining`, and writes it as an absolute value without a lock. A booking that commits in between can have its decrement overwritten.
+| Scenario | Expected result |
+|---|---|
+| 20 simultaneous loans of one asset | exactly 1 succeeds, the rest get `409` |
+| 20 simultaneous returns of one loan | exactly 1 succeeds |
+| loans and edits of one asset interleaved | at most 1 loan; asset status matches it |
+| 30 bookings interleaved with 10 quota edits | `stock_remaining = stock_total - bookings` |
+| 20 debits against a balance that covers 5 | exactly 5 succeed; balance is 0 and equals the ledger sum |
 
-The fix for both is the pattern used by the ledger: lock the row with `FOR UPDATE` inside the repository transaction and re-check the rule there (or express the change as a relative SQL update).
+With the row locks removed, all of these fail. The tests run only when `AMAMI_TEST_DATABASE_URL` is set; see `backend/README.md`.
 
 ## Startup migration steps
 

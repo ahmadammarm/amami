@@ -39,7 +39,7 @@ func (s *inventoryService) CreateAsset(req inventoryDto.AssetRequest) (*inventor
 	applyAssetRequest(asset, req)
 
 	if err := s.repo.CreateAsset(asset); err != nil {
-		return nil, mapAssetWriteError(err, "failed to create asset")
+		return nil, toAppError(err, "failed to create asset")
 	}
 
 	res := inventoryDto.ToAssetResponse(asset)
@@ -60,20 +60,9 @@ func (s *inventoryService) GetAllAssets(page, limit int) (utils.Page[inventoryDt
 }
 
 func (s *inventoryService) UpdateAsset(id uuid.UUID, req inventoryDto.AssetRequest) (*inventoryDto.AssetResponse, error) {
-	asset, err := s.findAsset(id)
+	asset, err := s.repo.UpdateAsset(id, editAsset(req))
 	if err != nil {
-		return nil, err
-	}
-
-	// LOANED is managed by the loan workflow, so it can neither be set nor
-	// cleared by editing the asset directly.
-	if (asset.CurrentStatus == domain.AssetLoaned) != (req.CurrentStatus == domain.AssetLoaned) {
-		return nil, apperror.Conflict("loan status is managed through loans; create or return a loan instead")
-	}
-
-	applyAssetRequest(asset, req)
-	if err := s.repo.UpdateAsset(asset); err != nil {
-		return nil, mapAssetWriteError(err, "failed to update asset")
+		return nil, toAppError(err, "failed to update asset")
 	}
 
 	res := inventoryDto.ToAssetResponse(asset)
@@ -81,45 +70,21 @@ func (s *inventoryService) UpdateAsset(id uuid.UUID, req inventoryDto.AssetReque
 }
 
 func (s *inventoryService) DeleteAsset(id uuid.UUID) error {
-	asset, err := s.findAsset(id)
-	if err != nil {
-		return err
-	}
-	if asset.CurrentStatus == domain.AssetLoaned {
-		return apperror.Conflict("asset is on loan; return it before deleting")
-	}
-
-	if err := s.repo.DeleteAsset(id); err != nil {
-		return apperror.Internal("failed to delete asset", err)
+	if err := s.repo.DeleteAsset(id, ensureNotOnLoan); err != nil {
+		return toAppError(err, "failed to delete asset")
 	}
 	return nil
 }
 
 func (s *inventoryService) CreateLoan(assetID uuid.UUID, req inventoryDto.CreateAssetLoanRequest) (*inventoryDto.AssetLoanResponse, error) {
-	asset, err := s.findAsset(assetID)
-	if err != nil {
-		return nil, err
-	}
-	if asset.CurrentStatus != domain.AssetGood {
-		return nil, apperror.Conflict("only assets in GOOD condition can be loaned")
-	}
+	// Input-only checks run before any lock is taken.
 	if req.DueDate != nil && req.DueDate.Before(req.LoanDate) {
 		return nil, apperror.Validation("due date must not be before the loan date")
 	}
 
-	loan := &domain.AssetLoan{
-		AssetID:        assetID,
-		JamaahID:       req.JamaahID,
-		LoanDate:       req.LoanDate,
-		DueDate:        req.DueDate,
-		ConditionNotes: req.ConditionNotes,
-	}
-
-	if err := s.repo.CreateLoan(loan); err != nil {
-		if errors.Is(err, gorm.ErrForeignKeyViolated) {
-			return nil, apperror.Validation("borrower not found")
-		}
-		return nil, apperror.Internal("failed to create loan", err)
+	loan, err := s.repo.CreateLoan(assetID, newLoan(req))
+	if err != nil {
+		return nil, toAppError(err, "failed to create loan")
 	}
 
 	res := inventoryDto.ToLoanResponse(loan)
@@ -127,42 +92,72 @@ func (s *inventoryService) CreateLoan(assetID uuid.UUID, req inventoryDto.Create
 }
 
 func (s *inventoryService) ReturnLoan(loanID uuid.UUID, req inventoryDto.ReturnAssetLoanRequest) (*inventoryDto.AssetLoanResponse, error) {
-	loan, err := s.repo.GetLoanByID(loanID)
+	loan, err := s.repo.ReturnLoan(loanID, recordReturn(req))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperror.NotFound("loan not found")
 		}
-		return nil, apperror.Internal("failed to fetch loan", err)
-	}
-	if loan.ReturnDate != nil {
-		return nil, apperror.Conflict("loan has already been returned")
-	}
-	if req.ReturnDate.Before(loan.LoanDate) {
-		return nil, apperror.Validation("return date must not be before the loan date")
-	}
-
-	loan.ReturnDate = &req.ReturnDate
-	if req.ConditionNotes != "" {
-		loan.ConditionNotes = loan.ConditionNotes + " | Return: " + req.ConditionNotes
-	}
-
-	if err := s.repo.ReturnLoan(loan); err != nil {
-		return nil, apperror.Internal("failed to return loan", err)
+		return nil, toAppError(err, "failed to return loan")
 	}
 
 	res := inventoryDto.ToLoanResponse(loan)
 	return &res, nil
 }
 
-func (s *inventoryService) findAsset(id uuid.UUID) (*domain.Asset, error) {
-	asset, err := s.repo.GetAssetByID(id)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("asset not found")
+// Business rules. Each runs inside the repository transaction against the
+// locked row, so the state it checks cannot change before the write.
+
+// editAsset applies the request to an asset. LOANED is managed by the loan
+// workflow, so an edit can neither set it nor clear it.
+func editAsset(req inventoryDto.AssetRequest) inventoryRepo.AssetEdit {
+	return func(asset *domain.Asset) error {
+		if (asset.CurrentStatus == domain.AssetLoaned) != (req.CurrentStatus == domain.AssetLoaned) {
+			return apperror.Conflict("loan status is managed through loans; create or return a loan instead")
 		}
-		return nil, apperror.Internal("failed to fetch asset", err)
+		applyAssetRequest(asset, req)
+		return nil
 	}
-	return asset, nil
+}
+
+// ensureNotOnLoan rejects deleting an asset that is currently lent out.
+func ensureNotOnLoan(asset *domain.Asset) error {
+	if asset.CurrentStatus == domain.AssetLoaned {
+		return apperror.Conflict("asset is on loan; return it before deleting")
+	}
+	return nil
+}
+
+// newLoan lends an asset that is in good condition.
+func newLoan(req inventoryDto.CreateAssetLoanRequest) inventoryRepo.LoanBuilder {
+	return func(asset *domain.Asset) (*domain.AssetLoan, error) {
+		if asset.CurrentStatus != domain.AssetGood {
+			return nil, apperror.Conflict("only assets in GOOD condition can be loaned")
+		}
+		return &domain.AssetLoan{
+			AssetID:        asset.ID,
+			JamaahID:       req.JamaahID,
+			LoanDate:       req.LoanDate,
+			DueDate:        req.DueDate,
+			ConditionNotes: req.ConditionNotes,
+		}, nil
+	}
+}
+
+// recordReturn closes an open loan.
+func recordReturn(req inventoryDto.ReturnAssetLoanRequest) inventoryRepo.LoanReturn {
+	return func(loan *domain.AssetLoan) error {
+		if loan.ReturnDate != nil {
+			return apperror.Conflict("loan has already been returned")
+		}
+		if req.ReturnDate.Before(loan.LoanDate) {
+			return apperror.Validation("return date must not be before the loan date")
+		}
+		loan.ReturnDate = &req.ReturnDate
+		if req.ConditionNotes != "" {
+			loan.ConditionNotes = loan.ConditionNotes + " | Return: " + req.ConditionNotes
+		}
+		return nil
+	}
 }
 
 func applyAssetRequest(asset *domain.Asset, req inventoryDto.AssetRequest) {
@@ -174,9 +169,13 @@ func applyAssetRequest(asset *domain.Asset, req inventoryDto.AssetRequest) {
 	asset.Location = req.Location
 }
 
-func mapAssetWriteError(err error, msg string) error {
-	if errors.Is(err, gorm.ErrDuplicatedKey) {
+func toAppError(err error, internalMsg string) error {
+	switch {
+	case errors.Is(err, gorm.ErrDuplicatedKey):
 		return apperror.Conflict("an asset with this SKU already exists")
+	case errors.Is(err, gorm.ErrForeignKeyViolated):
+		return apperror.Validation("borrower not found")
+	default:
+		return apperror.FromStore(err, "asset not found", internalMsg)
 	}
-	return apperror.Internal(msg, err)
 }

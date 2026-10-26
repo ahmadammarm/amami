@@ -8,8 +8,9 @@ import (
 )
 
 type SettingsRepository interface {
-	UpsertSetting(key string, value string, isSecret bool) error
-	GetSetting(key string) (*domain.SystemSetting, error)
+	// UpsertSettings writes every setting in one statement, so a save is
+	// all-or-nothing and concurrent saves never interleave key by key.
+	UpsertSettings(settings []domain.SystemSetting) error
 	GetAllSettings() ([]domain.SystemSetting, error)
 	Ping() error
 	GetAuditLogs(page, limit int, userID uuid.UUID, roleID uint) ([]domain.AuditLog, int64, error)
@@ -24,28 +25,17 @@ func NewSettingsRepository(db *gorm.DB) SettingsRepository {
 	return &settingsRepository{db: db}
 }
 
-func (r *settingsRepository) UpsertSetting(key string, value string, isSecret bool) error {
-	setting := domain.SystemSetting{
-		Key:      key,
-		Value:    value,
-		IsSecret: isSecret,
+// UpsertSettings issues a single INSERT ... ON CONFLICT (key) DO UPDATE.
+// Callers pass the keys in a fixed order, so two concurrent saves lock the
+// rows in the same order and cannot deadlock.
+func (r *settingsRepository) UpsertSettings(settings []domain.SystemSetting) error {
+	if len(settings) == 0 {
+		return nil
 	}
-	
 	return r.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "key"}},
 		DoUpdates: clause.AssignmentColumns([]string{"value", "is_secret"}),
-	}).Create(&setting).Error
-}
-
-func (r *settingsRepository) GetSetting(key string) (*domain.SystemSetting, error) {
-	var setting domain.SystemSetting
-	if err := r.db.Select("id", "key", "value", "is_secret").Where("key = ?", key).First(&setting).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return &domain.SystemSetting{Key: key, Value: ""}, nil
-		}
-		return nil, err
-	}
-	return &setting, nil
+	}).Create(&settings).Error
 }
 
 func (r *settingsRepository) GetAllSettings() ([]domain.SystemSetting, error) {
@@ -106,7 +96,7 @@ func (r *settingsRepository) GetAuditLogs(page, limit int, userID uuid.UUID, rol
 	}).
 		Select("audit_logs.id", "audit_logs.user_id", "audit_logs.action", "audit_logs.entity", "audit_logs.created_at").
 		Order("audit_logs.created_at DESC")
-	
+
 	if limit > 0 {
 		if page < 1 {
 			page = 1

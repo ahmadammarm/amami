@@ -7,7 +7,9 @@ import (
 	"github.com/ahmadammarm/amami/backend/internal/domain"
 	"github.com/ahmadammarm/amami/backend/internal/dto/settings"
 	repo "github.com/ahmadammarm/amami/backend/internal/repository/settings"
+	"github.com/ahmadammarm/amami/backend/pkg/apperror"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type SettingsService interface {
@@ -24,74 +26,80 @@ type settingsService struct {
 	repo repo.SettingsRepository
 }
 
-func (s *settingsService) GetSystemHealth() (*settings.HealthResponse, error) {
-	dbOk := s.repo.Ping() == nil
-	
-	// Check SMTP health using current config
-	smtpConf, _ := s.GetSMTPConfig()
-	smtpOk := false
-	if smtpConf.Host != "" {
-		// Just a shallow check, dial the host
-		addr := fmt.Sprintf("%s:%s", smtpConf.Host, smtpConf.Port)
-		conn, err := smtp.Dial(addr)
-		if err == nil {
-			smtpOk = true
-			conn.Close()
-		}
-	}
-
-	return &settings.HealthResponse{
-		Database: dbOk,
-		SMTP:     smtpOk,
-	}, nil
+func NewSettingsService(repo repo.SettingsRepository) SettingsService {
+	return &settingsService{repo: repo}
 }
 
-func (s *settingsService) GetAuditLogs(page, limit int, userID uuid.UUID, roleID uint) (*settings.AuditLogListResponse, error) {
-	logs, total, err := s.repo.GetAuditLogs(page, limit, userID, roleID)
+func (s *settingsService) UpdateMosqueProfile(userID uuid.UUID, req settings.MosqueProfileRequest) error {
+	err := s.repo.UpsertSettings([]domain.SystemSetting{
+		{Key: "mosque_name", Value: req.Name},
+		{Key: "mosque_address", Value: req.Address},
+		{Key: "mosque_phone", Value: req.Phone},
+		{Key: "mosque_logo", Value: req.Logo},
+		{Key: "legal_yayasan_id", Value: req.LegalYayasanID},
+		{Key: "bank_name", Value: req.BankName},
+		{Key: "bank_account_name", Value: req.BankAccountName},
+		{Key: "bank_account_number", Value: req.BankAccountNumber},
+		{Key: "zakat_fitrah_amount", Value: req.ZakatFitrahAmount},
+		{Key: "active_hijri_year", Value: req.ActiveHijriYear},
+	})
+	if err != nil {
+		return apperror.Internal("failed to update mosque profile", err)
+	}
+
+	s.recordAudit(userID, "Mosque Profile")
+	return nil
+}
+
+func (s *settingsService) GetMosqueProfile() (*settings.MosqueProfileResponse, error) {
+	values, err := s.loadSettings()
 	if err != nil {
 		return nil, err
 	}
 
-	var logResponses []settings.AuditLogResponse
-	for _, l := range logs {
-		logResponses = append(logResponses, settings.AuditLogResponse{
-			ID:        l.ID,
-			User:      l.User.Username,
-			Action:    l.Action,
-			Entity:    l.Entity,
-			Timestamp: l.CreatedAt.Format("2006-01-02 15:04:05"),
-		})
-	}
-	
-	if logResponses == nil {
-		logResponses = []settings.AuditLogResponse{}
-	}
-
-	return &settings.AuditLogListResponse{
-		Logs:       logResponses,
-		TotalCount: total,
-		Page:       page,
-		Limit:      limit,
+	return &settings.MosqueProfileResponse{
+		Name:              values["mosque_name"],
+		Address:           values["mosque_address"],
+		Phone:             values["mosque_phone"],
+		Logo:              values["mosque_logo"],
+		LegalYayasanID:    values["legal_yayasan_id"],
+		BankName:          values["bank_name"],
+		BankAccountName:   values["bank_account_name"],
+		BankAccountNumber: values["bank_account_number"],
+		ZakatFitrahAmount: values["zakat_fitrah_amount"],
+		ActiveHijriYear:   values["active_hijri_year"],
 	}, nil
 }
 
+func (s *settingsService) UpdateSMTPConfig(userID uuid.UUID, req settings.SMTPConfigRequest) error {
+	err := s.repo.UpsertSettings([]domain.SystemSetting{
+		{Key: "smtp_host", Value: req.Host},
+		{Key: "smtp_port", Value: req.Port},
+		{Key: "smtp_user", Value: req.Username},
+		{Key: "smtp_pass", Value: req.Password, IsSecret: true},
+		{Key: "smtp_from", Value: req.From},
+	})
+	if err != nil {
+		return apperror.Internal("failed to update SMTP configuration", err)
+	}
 
+	s.recordAudit(userID, "SMTP Configuration")
+	return nil
+}
+
+// GetSMTPConfig never returns the password.
 func (s *settingsService) GetSMTPConfig() (*settings.SMTPConfigResponse, error) {
-	res := &settings.SMTPConfigResponse{}
+	values, err := s.loadSettings()
+	if err != nil {
+		return nil, err
+	}
 
-	val, err := s.repo.GetSetting("smtp_host")
-	if err == nil { res.Host = val.Value }
-
-	val, err = s.repo.GetSetting("smtp_port")
-	if err == nil { res.Port = val.Value }
-
-	val, err = s.repo.GetSetting("smtp_user")
-	if err == nil { res.Username = val.Value }
-
-	val, err = s.repo.GetSetting("smtp_from")
-	if err == nil { res.From = val.Value }
-
-	return res, nil
+	return &settings.SMTPConfigResponse{
+		Host:     values["smtp_host"],
+		Port:     values["smtp_port"],
+		Username: values["smtp_user"],
+		From:     values["smtp_from"],
+	}, nil
 }
 
 func (s *settingsService) TestSMTPConnection(req settings.TestSMTPRequest) error {
@@ -115,101 +123,69 @@ func (s *settingsService) TestSMTPConnection(req settings.TestSMTPRequest) error
 	return nil
 }
 
+func (s *settingsService) GetSystemHealth() (*settings.HealthResponse, error) {
+	dbOk := s.repo.Ping() == nil
 
-func NewSettingsService(repo repo.SettingsRepository) SettingsService {
-	return &settingsService{repo: repo}
-}
-
-func (s *settingsService) UpdateMosqueProfile(userID uuid.UUID, req settings.MosqueProfileRequest) error {
-	settingsData := map[string]string{
-		"mosque_name":         req.Name,
-		"mosque_address":      req.Address,
-		"mosque_phone":        req.Phone,
-		"mosque_logo":         req.Logo,
-		"legal_yayasan_id":    req.LegalYayasanID,
-		"bank_name":           req.BankName,
-		"bank_account_name":   req.BankAccountName,
-		"bank_account_number": req.BankAccountNumber,
-		"zakat_fitrah_amount": req.ZakatFitrahAmount,
-		"active_hijri_year":   req.ActiveHijriYear,
-	}
-
-	for k, v := range settingsData {
-		if err := s.repo.UpsertSetting(k, v, false); err != nil {
-			return err
+	// Shallow SMTP check: dial the configured host.
+	smtpOk := false
+	if smtpConf, err := s.GetSMTPConfig(); err == nil && smtpConf.Host != "" {
+		addr := fmt.Sprintf("%s:%s", smtpConf.Host, smtpConf.Port)
+		if conn, err := smtp.Dial(addr); err == nil {
+			smtpOk = true
+			conn.Close()
 		}
 	}
 
-	// Record Audit Log
-	s.repo.CreateAuditLog(domain.AuditLog{
-		UserID: userID,
-		Action: "UPDATE",
-		Entity: "Mosque Profile",
-	})
-
-	return nil
+	return &settings.HealthResponse{
+		Database: dbOk,
+		SMTP:     smtpOk,
+	}, nil
 }
 
-func (s *settingsService) GetMosqueProfile() (*settings.MosqueProfileResponse, error) {
-	res := &settings.MosqueProfileResponse{}
-	
-	val, err := s.repo.GetSetting("mosque_name")
-	if err == nil { res.Name = val.Value }
-	
-	val, err = s.repo.GetSetting("mosque_address")
-	if err == nil { res.Address = val.Value }
-	
-	val, err = s.repo.GetSetting("mosque_phone")
-	if err == nil { res.Phone = val.Value }
-	
-	val, err = s.repo.GetSetting("mosque_logo")
-	if err == nil { res.Logo = val.Value }
-	
-	val, err = s.repo.GetSetting("legal_yayasan_id")
-	if err == nil { res.LegalYayasanID = val.Value }
+func (s *settingsService) GetAuditLogs(page, limit int, userID uuid.UUID, roleID uint) (*settings.AuditLogListResponse, error) {
+	logs, total, err := s.repo.GetAuditLogs(page, limit, userID, roleID)
+	if err != nil {
+		return nil, err
+	}
 
-	val, err = s.repo.GetSetting("bank_name")
-	if err == nil { res.BankName = val.Value }
+	logResponses := make([]settings.AuditLogResponse, 0, len(logs))
+	for _, l := range logs {
+		logResponses = append(logResponses, settings.AuditLogResponse{
+			ID:        l.ID,
+			User:      l.User.Username,
+			Action:    l.Action,
+			Entity:    l.Entity,
+			Timestamp: l.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
 
-	val, err = s.repo.GetSetting("bank_account_name")
-	if err == nil { res.BankAccountName = val.Value }
-
-	val, err = s.repo.GetSetting("bank_account_number")
-	if err == nil { res.BankAccountNumber = val.Value }
-
-	val, err = s.repo.GetSetting("zakat_fitrah_amount")
-	if err == nil { res.ZakatFitrahAmount = val.Value }
-
-	val, err = s.repo.GetSetting("active_hijri_year")
-	if err == nil { res.ActiveHijriYear = val.Value }
-
-	return res, nil
+	return &settings.AuditLogListResponse{
+		Logs:       logResponses,
+		TotalCount: total,
+		Page:       page,
+		Limit:      limit,
+	}, nil
 }
 
-func (s *settingsService) UpdateSMTPConfig(userID uuid.UUID, req settings.SMTPConfigRequest) error {
-	settingsData := map[string]struct {
-		val    string
-		secret bool
-	}{
-		"smtp_host": {req.Host, false},
-		"smtp_port": {req.Port, false},
-		"smtp_user": {req.Username, false},
-		"smtp_pass": {req.Password, true},
-		"smtp_from": {req.From, false},
+// loadSettings reads every setting in one query, keyed by name. A key that was
+// never saved reads as "".
+func (s *settingsService) loadSettings() (map[string]string, error) {
+	rows, err := s.repo.GetAllSettings()
+	if err != nil {
+		return nil, apperror.Internal("failed to fetch settings", err)
 	}
 
-	for k, v := range settingsData {
-		if err := s.repo.UpsertSetting(k, v.val, v.secret); err != nil {
-			return err
-		}
+	values := make(map[string]string, len(rows))
+	for _, row := range rows {
+		values[row.Key] = row.Value
 	}
+	return values, nil
+}
 
-	// Record Audit Log
-	s.repo.CreateAuditLog(domain.AuditLog{
-		UserID: userID,
-		Action: "UPDATE",
-		Entity: "SMTP Configuration",
-	})
-
-	return nil
+// recordAudit is best effort: the settings are already saved, so a failed
+// audit write is logged rather than reported to the caller.
+func (s *settingsService) recordAudit(userID uuid.UUID, entity string) {
+	if err := s.repo.CreateAuditLog(domain.AuditLog{UserID: userID, Action: "UPDATE", Entity: entity}); err != nil {
+		zap.L().Warn("failed to write audit log", zap.String("entity", entity), zap.Error(err))
+	}
 }

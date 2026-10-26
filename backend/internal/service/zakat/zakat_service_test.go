@@ -20,21 +20,22 @@ type fakeRepo struct {
 	distributeCnt int
 }
 
-func (r *fakeRepo) FindJamaah(id uuid.UUID) (*domain.Jamaah, error) {
-	j, ok := r.jamaah[id]
-	if !ok {
-		return nil, gorm.ErrRecordNotFound
-	}
-	return j, nil
-}
-
 func (r *fakeRepo) CollectZakat(_ *domain.ZakatDonation, tx *domain.Transaction) error {
 	r.collectCalls++
 	r.collected = append(r.collected, tx)
 	return nil
 }
 
-func (r *fakeRepo) DistributeZakat(_ *domain.ZakatDistribution, tx *domain.Transaction) error {
+// DistributeZakat mirrors the real repository: it looks up the recipient and
+// runs the service's check before recording anything.
+func (r *fakeRepo) DistributeZakat(dist *domain.ZakatDistribution, tx *domain.Transaction, check zakatRepo.RecipientCheck) error {
+	recipient, ok := r.jamaah[dist.MustahikID]
+	if !ok {
+		return gorm.ErrRecordNotFound
+	}
+	if err := check(recipient); err != nil {
+		return err
+	}
 	r.distributeCnt++
 	r.distributed = append(r.distributed, tx)
 	return nil

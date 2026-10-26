@@ -4,9 +4,9 @@ import (
 	"errors"
 
 	"github.com/ahmadammarm/amami/backend/internal/domain"
+	"github.com/ahmadammarm/amami/backend/pkg/database"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // TransactionRow is a ledger row plus the id of the reversal entry that cancels it, if any.
@@ -55,10 +55,10 @@ func (r *financeRepository) CreateTransaction(tx *domain.Transaction) error {
 
 func (r *financeRepository) ReverseTransaction(originalID uuid.UUID, build ReversalBuilder) (*domain.Transaction, error) {
 	var reversal *domain.Transaction
+	// Lock order: the transaction row, then (inside PostTransaction) the fund row.
 	err := r.db.Transaction(func(dbTx *gorm.DB) error {
-		var original domain.Transaction
-		if err := dbTx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&original, "id = ?", originalID).Error; err != nil {
+		original, err := database.LockForUpdate[domain.Transaction](dbTx, originalID)
+		if err != nil {
 			return err
 		}
 
@@ -71,7 +71,7 @@ func (r *financeRepository) ReverseTransaction(originalID uuid.UUID, build Rever
 			return domain.ErrAlreadyReversed
 		}
 
-		built, err := build(&original)
+		built, err := build(original)
 		if err != nil {
 			return err
 		}

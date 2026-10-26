@@ -66,7 +66,7 @@ func (s *agendaService) UpdateAgenda(id uuid.UUID, req agendaDto.AgendaRequest) 
 
 	applyRequest(agenda, req)
 	if err := s.repo.UpdateAgenda(agenda); err != nil {
-		return nil, apperror.Internal("failed to update agenda", err)
+		return nil, apperror.FromStore(err, "agenda not found", "failed to update agenda")
 	}
 
 	res := agendaDto.ToAgendaResponse(agenda)

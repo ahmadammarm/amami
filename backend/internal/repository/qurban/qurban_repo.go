@@ -4,16 +4,21 @@ import (
 	"errors"
 
 	"github.com/ahmadammarm/amami/backend/internal/domain"
+	"github.com/ahmadammarm/amami/backend/pkg/database"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
+// PackageEdit applies a change to a locked package, or rejects it. Bookings
+// lock the same row, so an edit and a booking never interleave.
+type PackageEdit func(pkg *domain.QurbanPackage) error
+
 type QurbanRepository interface {
 	CreatePackage(pkg *domain.QurbanPackage) error
 	GetAllPackages(page, limit int) ([]domain.QurbanPackage, int64, error)
-	GetPackageByID(id uint) (*domain.QurbanPackage, error)
-	UpdatePackage(pkg *domain.QurbanPackage) error
+	// UpdatePackage locks the package, applies edit and saves the result.
+	UpdatePackage(id uint, edit PackageEdit) (*domain.QurbanPackage, error)
 	DeletePackage(id uint) error
 
 	// CreateBooking reserves one unit of the package and inserts the booking
@@ -53,29 +58,36 @@ func (r *qurbanRepository) GetAllPackages(page, limit int) ([]domain.QurbanPacka
 	return pkgs, total, err
 }
 
-func (r *qurbanRepository) GetPackageByID(id uint) (*domain.QurbanPackage, error) {
-	var pkg domain.QurbanPackage
-	if err := r.db.First(&pkg, "id = ?", id).Error; err != nil {
-		return nil, err
-	}
-	return &pkg, nil
-}
-
-func (r *qurbanRepository) UpdatePackage(pkg *domain.QurbanPackage) error {
-	return r.db.Model(pkg).
-		Select("name", "type", "price", "year_hijri", "stock_total", "stock_remaining").
-		Updates(pkg).Error
+func (r *qurbanRepository) UpdatePackage(id uint, edit PackageEdit) (*domain.QurbanPackage, error) {
+	var updated *domain.QurbanPackage
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		pkg, err := database.LockForUpdate[domain.QurbanPackage](tx, id)
+		if err != nil {
+			return err
+		}
+		if err := edit(pkg); err != nil {
+			return err
+		}
+		res := tx.Model(pkg).
+			Select("name", "type", "price", "year_hijri", "stock_total", "stock_remaining").
+			Updates(pkg)
+		if err := database.ExpectRows(res); err != nil {
+			return err
+		}
+		updated = pkg
+		return nil
+	})
+	return updated, err
 }
 
 // DeletePackage soft-deletes the package; existing bookings keep referencing it.
 func (r *qurbanRepository) DeletePackage(id uint) error {
-	return deleteOrNotFound(r.db.Delete(&domain.QurbanPackage{}, "id = ?", id))
+	return database.ExpectRows(r.db.Delete(&domain.QurbanPackage{}, "id = ?", id))
 }
 
 func (r *qurbanRepository) CreateBooking(booking *domain.QurbanBooking) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		var pkg domain.QurbanPackage
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&pkg, "id = ?", booking.PackageID).Error
+		pkg, err := database.LockForUpdate[domain.QurbanPackage](tx, booking.PackageID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return domain.ErrPackageNotFound
 		}
@@ -86,7 +98,7 @@ func (r *qurbanRepository) CreateBooking(booking *domain.QurbanBooking) error {
 			return domain.ErrPackageOutOfStock
 		}
 
-		if err := tx.Model(&pkg).Update("stock_remaining", gorm.Expr("stock_remaining - 1")).Error; err != nil {
+		if err := tx.Model(pkg).Update("stock_remaining", gorm.Expr("stock_remaining - 1")).Error; err != nil {
 			return err
 		}
 
@@ -123,24 +135,16 @@ func (r *qurbanRepository) GetAnimalByID(id uuid.UUID) (*domain.QurbanAnimal, er
 	return &animal, nil
 }
 
+// UpdateAnimal reports gorm.ErrRecordNotFound if the animal was deleted after
+// it was read.
 func (r *qurbanRepository) UpdateAnimal(animal *domain.QurbanAnimal) error {
-	return r.db.Model(animal).
+	return database.ExpectRows(r.db.Model(animal).
 		Select("tag_number", "type", "weight", "status", "vendor_info").
-		Updates(animal).Error
+		Updates(animal))
 }
 
 func (r *qurbanRepository) DeleteAnimal(id uuid.UUID) error {
-	return deleteOrNotFound(r.db.Delete(&domain.QurbanAnimal{}, "id = ?", id))
-}
-
-func deleteOrNotFound(res *gorm.DB) error {
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
+	return database.ExpectRows(r.db.Delete(&domain.QurbanAnimal{}, "id = ?", id))
 }
 
 // unscoped keeps bookings showing soft-deleted jamaah and packages.

@@ -126,7 +126,7 @@ func (s *userMgmtService) DeleteUser(actorID, userID uuid.UUID) error {
 	}
 
 	if err := s.userRepo.DeleteUser(userID); err != nil {
-		return apperror.Internal("failed to delete user", err)
+		return apperror.FromStore(err, "user not found", "failed to delete user")
 	}
 	return nil
 }

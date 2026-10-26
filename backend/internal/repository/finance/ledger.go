@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ahmadammarm/amami/backend/internal/domain"
+	"github.com/ahmadammarm/amami/backend/pkg/database"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -14,11 +15,11 @@ import (
 // concurrent postings to the same fund are serialized. Every ledger write in
 // the system (manual entries, reversals, zakat) goes through this function.
 func PostTransaction(dbTx *gorm.DB, tx *domain.Transaction) error {
-	var fund domain.Fund
-	if err := dbTx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&fund, tx.FundID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return domain.ErrFundNotFound
-		}
+	fund, err := database.LockForUpdate[domain.Fund](dbTx, tx.FundID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.ErrFundNotFound
+	}
+	if err != nil {
 		return err
 	}
 
@@ -34,7 +35,7 @@ func PostTransaction(dbTx *gorm.DB, tx *domain.Transaction) error {
 		return fmt.Errorf("invalid transaction type %q", tx.Type)
 	}
 
-	if err := dbTx.Model(&fund).Update("current_balance", fund.CurrentBalance).Error; err != nil {
+	if err := dbTx.Model(fund).Update("current_balance", fund.CurrentBalance).Error; err != nil {
 		return err
 	}
 	return dbTx.Omit(clause.Associations).Create(tx).Error

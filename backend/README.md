@@ -129,3 +129,10 @@ go test ./internal/service/finance -run TestReverseTransaction
 ```
 
 `internal/domain/permissions_test.go` fails if the grant table drifts from `docs/RBAC_VIEW_MATRIX.md`.
+
+Concurrency tests (`*_concurrency_test.go`) fire simultaneous requests at real PostgreSQL to prove that loans, returns, qurban quota edits and ledger debits cannot race. They are skipped unless `AMAMI_TEST_DATABASE_URL` is set. Each test creates its own schema, migrates it and drops it afterwards, so existing data is never touched:
+
+```bash
+AMAMI_TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/amami_db?sslmode=disable" \
+  go test ./internal/service/... -run Concurrent -count=5
+```

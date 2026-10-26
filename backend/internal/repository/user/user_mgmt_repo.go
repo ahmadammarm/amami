@@ -2,6 +2,7 @@ package user
 
 import (
 	"github.com/ahmadammarm/amami/backend/internal/domain"
+	"github.com/ahmadammarm/amami/backend/pkg/database"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -50,14 +51,7 @@ func (r *userMgmtRepository) FindAllUsers(page int, limit int) ([]domain.User, i
 }
 
 func (r *userMgmtRepository) UpdateUserStatus(userID uuid.UUID, status domain.UserStatus) error {
-	res := r.db.Model(&domain.User{}).Where("id = ?", userID).Update("status", status)
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
+	return database.ExpectRows(r.db.Model(&domain.User{}).Where("id = ?", userID).Update("status", status))
 }
 
 func (r *userMgmtRepository) FindByID(id uuid.UUID) (*domain.User, error) {
@@ -74,6 +68,6 @@ func (r *userMgmtRepository) DeleteUser(userID uuid.UUID) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&domain.Jamaah{}).Error; err != nil {
 			return err
 		}
-		return tx.Where("id = ?", userID).Delete(&domain.User{}).Error
+		return database.ExpectRows(tx.Where("id = ?", userID).Delete(&domain.User{}))
 	})
 }

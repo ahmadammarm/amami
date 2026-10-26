@@ -2,6 +2,7 @@ package agenda
 
 import (
 	"github.com/ahmadammarm/amami/backend/internal/domain"
+	"github.com/ahmadammarm/amami/backend/pkg/database"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -46,22 +47,17 @@ func (r *agendaRepository) GetByID(id uuid.UUID) (*domain.Agenda, error) {
 	return &agenda, nil
 }
 
+// UpdateAgenda reports gorm.ErrRecordNotFound if the agenda was deleted after
+// it was read.
 func (r *agendaRepository) UpdateAgenda(agenda *domain.Agenda) error {
-	return r.db.Model(agenda).
+	return database.ExpectRows(r.db.Model(agenda).
 		Select("title", "description", "day", "time", "location", "status").
-		Updates(agenda).Error
+		Updates(agenda))
 }
 
 // DeleteAgenda soft-deletes the agenda; its documentation is kept for the archive.
 func (r *agendaRepository) DeleteAgenda(id uuid.UUID) error {
-	res := r.db.Delete(&domain.Agenda{}, "id = ?", id)
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
+	return database.ExpectRows(r.db.Delete(&domain.Agenda{}, "id = ?", id))
 }
 
 func (r *agendaRepository) GetDocumentation(agendaID uuid.UUID) ([]domain.AgendaDocumentation, error) {

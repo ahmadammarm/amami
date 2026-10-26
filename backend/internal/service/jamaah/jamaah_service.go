@@ -63,7 +63,7 @@ func (s *jamaahService) UpdateJamaah(id uuid.UUID, req jamaah.JamaahRequest) (*j
 	j.IsMustahik = req.IsMustahik
 
 	if err := s.repo.Update(j); err != nil {
-		return nil, apperror.Internal("failed to update jamaah", err)
+		return nil, apperror.FromStore(err, "jamaah not found", "failed to update jamaah")
 	}
 
 	res := jamaah.ToJamaahResponse(j)
@@ -123,10 +123,6 @@ func (s *jamaahService) GetSurvey(jamaahID uuid.UUID) (*jamaah.MustahikSurveyRes
 
 // SubmitSurvey stores the survey answers and recalculates the poverty score.
 func (s *jamaahService) SubmitSurvey(jamaahID uuid.UUID, req jamaah.MustahikSurveyRequest, surveyorID uuid.UUID) (*jamaah.MustahikSurveyResponse, error) {
-	if _, err := s.findJamaah(jamaahID); err != nil {
-		return nil, err
-	}
-
 	survey := &domain.MustahikData{
 		JamaahID:        jamaahID,
 		TotalIncome:     req.TotalIncome,
@@ -144,7 +140,7 @@ func (s *jamaahService) SubmitSurvey(jamaahID uuid.UUID, req jamaah.MustahikSurv
 	})
 
 	if err := s.repo.SaveSurvey(survey, score); err != nil {
-		return nil, apperror.Internal("failed to save survey", err)
+		return nil, apperror.FromStore(err, "jamaah not found", "failed to save survey")
 	}
 
 	res := jamaah.ToSurveyResponse(survey, score)
@@ -154,10 +150,7 @@ func (s *jamaahService) SubmitSurvey(jamaahID uuid.UUID, req jamaah.MustahikSurv
 func (s *jamaahService) findJamaah(id uuid.UUID) (*domain.Jamaah, error) {
 	j, err := s.repo.GetByID(id)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("jamaah not found")
-		}
-		return nil, apperror.Internal("failed to fetch jamaah", err)
+		return nil, apperror.FromStore(err, "jamaah not found", "failed to fetch jamaah")
 	}
 	return j, nil
 }

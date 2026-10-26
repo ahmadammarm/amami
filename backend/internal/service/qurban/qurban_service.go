@@ -67,27 +67,11 @@ func (s *qurbanService) GetAllPackages(page, limit int) (utils.Page[qurbanDto.Pa
 }
 
 func (s *qurbanService) UpdatePackage(id uint, req qurbanDto.PackageRequest) (*qurbanDto.PackageResponse, error) {
-	pkg, err := s.repo.GetPackageByID(id)
+	pkg, err := s.repo.UpdatePackage(id, func(pkg *domain.QurbanPackage) error {
+		return applyPackageChange(pkg, req)
+	})
 	if err != nil {
-		return nil, notFoundOr(err, "package not found", "failed to fetch package")
-	}
-
-	// Changing the total shifts the remaining stock by the same amount, so
-	// units already booked stay booked.
-	remaining := pkg.StockRemaining + (req.StockTotal - pkg.StockTotal)
-	if remaining < 0 {
-		return nil, apperror.Conflict("stock total cannot be lower than the number of units already booked")
-	}
-
-	pkg.Name = req.Name
-	pkg.Type = req.Type
-	pkg.Price = req.Price
-	pkg.YearHijri = req.YearHijri
-	pkg.StockTotal = req.StockTotal
-	pkg.StockRemaining = remaining
-
-	if err := s.repo.UpdatePackage(pkg); err != nil {
-		return nil, apperror.Internal("failed to update package", err)
+		return nil, apperror.FromStore(err, "package not found", "failed to update package")
 	}
 
 	res := qurbanDto.ToPackageResponse(pkg)
@@ -96,8 +80,26 @@ func (s *qurbanService) UpdatePackage(id uint, req qurbanDto.PackageRequest) (*q
 
 func (s *qurbanService) DeletePackage(id uint) error {
 	if err := s.repo.DeletePackage(id); err != nil {
-		return notFoundOr(err, "package not found", "failed to delete package")
+		return apperror.FromStore(err, "package not found", "failed to delete package")
 	}
+	return nil
+}
+
+// applyPackageChange applies the request to a locked package. Changing the
+// total shifts the remaining stock by the same amount, so units already booked
+// stay booked; the total cannot drop below them.
+func applyPackageChange(pkg *domain.QurbanPackage, req qurbanDto.PackageRequest) error {
+	remaining := pkg.StockRemaining + (req.StockTotal - pkg.StockTotal)
+	if remaining < 0 {
+		return apperror.Conflict("stock total cannot be lower than the number of units already booked")
+	}
+
+	pkg.Name = req.Name
+	pkg.Type = req.Type
+	pkg.Price = req.Price
+	pkg.YearHijri = req.YearHijri
+	pkg.StockTotal = req.StockTotal
+	pkg.StockRemaining = remaining
 	return nil
 }
 
@@ -166,7 +168,7 @@ func (s *qurbanService) GetAnimals() ([]qurbanDto.AnimalResponse, error) {
 func (s *qurbanService) UpdateAnimal(id uuid.UUID, req qurbanDto.AnimalRequest) (*qurbanDto.AnimalResponse, error) {
 	animal, err := s.repo.GetAnimalByID(id)
 	if err != nil {
-		return nil, notFoundOr(err, "animal not found", "failed to fetch animal")
+		return nil, apperror.FromStore(err, "animal not found", "failed to fetch animal")
 	}
 
 	applyAnimalRequest(animal, req)
@@ -180,7 +182,7 @@ func (s *qurbanService) UpdateAnimal(id uuid.UUID, req qurbanDto.AnimalRequest) 
 
 func (s *qurbanService) DeleteAnimal(id uuid.UUID) error {
 	if err := s.repo.DeleteAnimal(id); err != nil {
-		return notFoundOr(err, "animal not found", "failed to delete animal")
+		return apperror.FromStore(err, "animal not found", "failed to delete animal")
 	}
 	return nil
 }
@@ -197,12 +199,5 @@ func mapAnimalWriteError(err error, msg string) error {
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return apperror.Conflict("an animal with this tag number already exists")
 	}
-	return apperror.Internal(msg, err)
-}
-
-func notFoundOr(err error, notFoundMsg, internalMsg string) error {
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return apperror.NotFound(notFoundMsg)
-	}
-	return apperror.Internal(internalMsg, err)
+	return apperror.FromStore(err, "animal not found", msg)
 }

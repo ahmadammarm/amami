@@ -1,7 +1,11 @@
 // Package apperror defines typed errors that services return and handlers map to HTTP statuses.
 package apperror
 
-import "errors"
+import (
+	"errors"
+
+	"gorm.io/gorm"
+)
 
 type Kind int
 
@@ -41,6 +45,28 @@ func Unauthorized(msg string) *Error { return &Error{Kind: KindUnauthorized, Msg
 // Internal wraps an unexpected error; its cause is logged but never shown to clients.
 func Internal(msg string, err error) *Error {
 	return &Error{Kind: KindInternal, Msg: msg, Err: err}
+}
+
+// FromStore converts an error returned by a repository into an *Error:
+//   - an *Error (typically a business rule rejected inside a transaction)
+//     passes through unchanged;
+//   - a missing row becomes NotFound(notFoundMsg);
+//   - anything else becomes Internal(internalMsg), keeping the cause for logs.
+//
+// Callers check for other specific database errors (duplicate key, foreign
+// key) before calling it when those need their own message.
+func FromStore(err error, notFoundMsg, internalMsg string) error {
+	if err == nil {
+		return nil
+	}
+	var appErr *Error
+	if errors.As(err, &appErr) {
+		return appErr
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return NotFound(notFoundMsg)
+	}
+	return Internal(internalMsg, err)
 }
 
 // IsKind reports whether err (or anything it wraps) is an *Error of the given kind.

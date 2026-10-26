@@ -52,17 +52,6 @@ func (s *zakatService) CollectZakat(req zakat.CollectZakatRequest, userID uuid.U
 }
 
 func (s *zakatService) DistributeZakat(req zakat.DistributeZakatRequest, userID uuid.UUID) (*zakat.ZakatDistributionResponse, error) {
-	mustahik, err := s.repo.FindJamaah(req.MustahikID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.Validation("recipient not found")
-		}
-		return nil, apperror.Internal("failed to load recipient", err)
-	}
-	if !mustahik.IsMustahik {
-		return nil, apperror.Validation("recipient is not registered as mustahik")
-	}
-
 	txModel, err := buildLedgerEntry(req.FundID, req.AmountOrQty, req.Unit, domain.TransactionDebit, domain.CategoryZakatOut, userID)
 	if err != nil {
 		return nil, err
@@ -75,12 +64,29 @@ func (s *zakatService) DistributeZakat(req zakat.DistributeZakatRequest, userID 
 		Description: req.Description,
 	}
 
-	if err := s.repo.DistributeZakat(distribution, txModel); err != nil {
-		return nil, financeSvc.MapLedgerError(err)
+	if err := s.repo.DistributeZakat(distribution, txModel, ensureMustahik); err != nil {
+		var appErr *apperror.Error
+		switch {
+		case errors.As(err, &appErr):
+			return nil, appErr
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			return nil, apperror.Validation("recipient not found")
+		default:
+			return nil, financeSvc.MapLedgerError(err)
+		}
 	}
 
 	res := zakat.ToDistributionResponse(distribution)
 	return &res, nil
+}
+
+// ensureMustahik runs against the locked recipient row: only jamaah registered
+// as mustahik may receive zakat.
+func ensureMustahik(recipient *domain.Jamaah) error {
+	if !recipient.IsMustahik {
+		return apperror.Validation("recipient is not registered as mustahik")
+	}
+	return nil
 }
 
 // buildLedgerEntry returns the ledger transaction for a zakat record, or nil
